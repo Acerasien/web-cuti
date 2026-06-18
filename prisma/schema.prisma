@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  KARYAWAN
+}
+
+enum LeaveType {
+  PERNIKAHAN_KARYAWAN
+  PERNIKAHAN_ANAK
+  KHITAN_BAPTIS
+  ISTRI_MELAHIRKAN
+  KEMATIAN_KELUARGA
+  KARYAWATI_MELAHIRKAN
+  KARYAWATI_KEGUGURAN
+  SAKIT
+}
+
+enum ExcuseType {
+  TIDAK_ABSEN_MASUK
+  TIDAK_ABSEN_PULANG
+  DATANG_TERLAMBAT
+  CUTI_TAHUNAN
+  IZIN_LAINNYA
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String?  @unique
+  username     String?  @unique
+  passwordHash String   @map("password_hash")
+  role         Role     @default(KARYAWAN)
+  nik          String?  @unique
+  level        String?
+  department   String?
+  position     String?
+  lokasiKerja  String?  @map("lokasi_kerja")
+  namaAtasan   String?  @map("nama_atasan")
+  subCompanyId String?  @map("sub_company_id")
+  joinDate     DateTime @map("join_date") @db.Date
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  leaveRequests        LeaveRequest[]   @relation("UserLeaveRequests")
+  reviewedLeaveRequests LeaveRequest[]  @relation("ReviewerLeaveRequests")
+  excuseRequests       ExcuseRequest[]  @relation("UserExcuseRequests")
+  reviewedExcuseRequests ExcuseRequest[] @relation("ReviewerExcuseRequests")
+  annualQuotas         AnnualLeaveQuota[] @relation("UserQuotas")
+  createdQuotas        AnnualLeaveQuota[] @relation("CreatorQuotas")
+  subCompany           SubCompany?      @relation(fields: [subCompanyId], references: [id], onDelete: SetNull)
+
+  @@map("users")
+}
+
+model SubCompany {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users     User[]
+
+  @@map("sub_companies")
+}
+
+model AnnualLeaveQuota {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  cycleStart  DateTime @map("cycle_start") @db.Date
+  cycleEnd    DateTime @map("cycle_end") @db.Date
+  totalDays   Int      @map("total_days")
+  createdById String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user      User            @relation("UserQuotas", fields: [userId], references: [id], onDelete: Restrict)
+  createdBy User            @relation("CreatorQuotas", fields: [createdById], references: [id], onDelete: Restrict)
+  excuses   ExcuseRequest[]
+
+  @@index([userId, cycleStart])
+  @@map("annual_leave_quotas")
+}
+
+model LeaveRequest {
+  id             String        @id @default(uuid())
+  userId         String        @map("user_id")
+  leaveType      LeaveType     @map("leave_type")
+  startDate      DateTime      @map("start_date") @db.Date
+  endDate        DateTime      @map("end_date") @db.Date
+  totalDays      Int           @map("total_days")
+  reason         String
+  attachmentUrl  String?       @map("attachment_url")
+  status         RequestStatus @default(PENDING)
+  reviewedById   String?       @map("reviewed_by")
+  reviewedAt     DateTime?     @map("reviewed_at")
+  rejectionNote  String?       @map("rejection_note")
+  submittedById  String?       @map("submitted_by") // for admin submitting on behalf
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  user       User  @relation("UserLeaveRequests", fields: [userId], references: [id], onDelete: Restrict)
+  reviewedBy User? @relation("ReviewerLeaveRequests", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([leaveType, status])
+  @@index([startDate, endDate])
+  @@map("leave_requests")
+}
+
+model ExcuseRequest {
+  id              String        @id @default(uuid())
+  userId          String        @map("user_id")
+  excuseType      ExcuseType    @map("excuse_type")
+  dateFrom        DateTime      @map("date_from") @db.Date
+  dateTo          DateTime      @map("date_to") @db.Date
+  totalDays       Decimal?      @map("total_days") @db.Decimal(5, 1)
+  reason          String
+  attachmentUrl   String?       @map("attachment_url")
+  annualQuotaId   String?       @map("annual_quota_id")
+  status          RequestStatus @default(PENDING)
+  reviewedById    String?       @map("reviewed_by")
+  reviewedAt      DateTime?     @map("reviewed_at")
+  rejectionNote   String?       @map("rejection_note")
+  submittedById   String?       @map("submitted_by") // for admin submitting on behalf
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  user         User              @relation("UserExcuseRequests", fields: [userId], references: [id], onDelete: Restrict)
+  reviewedBy   User?             @relation("ReviewerExcuseRequests", fields: [reviewedById], references: [id], onDelete: SetNull)
+  annualQuota  AnnualLeaveQuota? @relation(fields: [annualQuotaId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([userId, annualQuotaId])
+  @@index([excuseType, status])
+  @@map("excuse_requests")
+}
+
+model CompanySetting {
+  id                 String   @id @default(uuid())
+  defaultAnnualDays  Int      @default(12) @map("default_annual_days")
+  companyName        String   @default("Perusahaan") @map("company_name")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("company_settings")
+}
+
+model Holiday {
+  id          String   @id @default(uuid())
+  date        DateTime @unique @db.Date
+  description String
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("holidays")
+}
