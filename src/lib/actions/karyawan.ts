@@ -31,7 +31,7 @@ export async function createKaryawanUser(prevState: any, formData: FormData) {
     const department = formData.get("department") as string;
     const position = formData.get("position") as string;
     const lokasiKerja = formData.get("lokasiKerja") as string;
-    const namaAtasan = formData.get("namaAtasan") as string;
+    const atasanId = formData.get("atasanId") as string || null;
     const subCompanyId = formData.get("subCompanyId") as string;
     const joinDateInput = formData.get("joinDate") as string;
 
@@ -85,6 +85,16 @@ export async function createKaryawanUser(prevState: any, formData: FormData) {
       return { error: "Format tanggal bergabung tidak valid." };
     }
 
+    // Find supervisor's name if atasanId is provided
+    let namaAtasan: string | null = null;
+    if (atasanId) {
+      const supervisor = await prisma.user.findUnique({
+        where: { id: atasanId },
+        select: { name: true },
+      });
+      namaAtasan = supervisor?.name ?? null;
+    }
+
     // Create User
     const user = await prisma.user.create({
       data: {
@@ -98,7 +108,8 @@ export async function createKaryawanUser(prevState: any, formData: FormData) {
         department: department?.trim() || null,
         position: position?.trim() || null,
         lokasiKerja: lokasiKerja?.trim() || null,
-        namaAtasan: namaAtasan?.trim() || null,
+        namaAtasan,
+        atasanId,
         subCompanyId: subCompanyId || null,
         joinDate,
         isActive: true,
@@ -157,7 +168,7 @@ export async function updateKaryawanUser(userId: string, formData: FormData) {
     const department = formData.get("department") as string;
     const position = formData.get("position") as string;
     const lokasiKerja = formData.get("lokasiKerja") as string;
-    const namaAtasan = formData.get("namaAtasan") as string;
+    const atasanId = formData.get("atasanId") as string || null;
     const subCompanyId = formData.get("subCompanyId") as string;
     const joinDateInput = formData.get("joinDate") as string;
     const isActiveInput = formData.get("isActive") as string;
@@ -219,6 +230,16 @@ export async function updateKaryawanUser(userId: string, formData: FormData) {
       }
     }
 
+    // Find supervisor's name if atasanId is provided
+    let namaAtasan: string | null = null;
+    if (atasanId) {
+      const supervisor = await prisma.user.findUnique({
+        where: { id: atasanId },
+        select: { name: true },
+      });
+      namaAtasan = supervisor?.name ?? null;
+    }
+
     const updateData: any = {
       name,
       email: emailTrim,
@@ -229,7 +250,8 @@ export async function updateKaryawanUser(userId: string, formData: FormData) {
       department: department?.trim() || null,
       position: position?.trim() || null,
       lokasiKerja: lokasiKerja?.trim() || null,
-      namaAtasan: namaAtasan?.trim() || null,
+      namaAtasan,
+      atasanId,
       subCompanyId: subCompanyId || null,
       joinDate,
       isActive: isActiveInput === "true",

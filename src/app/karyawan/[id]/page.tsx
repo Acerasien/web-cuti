@@ -69,6 +69,11 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
           name: true,
         },
       },
+      atasan: {
+        select: {
+          name: true,
+        },
+      },
     },
   });
 
@@ -77,6 +82,19 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
   }
 
   const subCompanies = await prisma.subCompany.findMany({
+    orderBy: { name: "asc" },
+  });
+
+  const potentialSupervisors = await prisma.user.findMany({
+    where: {
+      role: "KARYAWAN",
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      level: true,
+    },
     orderBy: { name: "asc" },
   });
 
@@ -96,12 +114,13 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
               department: employee.department,
               position: employee.position,
               lokasiKerja: employee.lokasiKerja,
-              namaAtasan: employee.namaAtasan,
+              atasanId: employee.atasanId,
               subCompanyId: employee.subCompanyId,
               joinDate: employee.joinDate.toISOString(),
               isActive: employee.isActive,
             }}
             subCompanies={subCompanies.map((sc) => ({ id: sc.id, name: sc.name }))}
+            potentialSupervisors={potentialSupervisors}
           />
         </div>
       </PageWrapper>
@@ -192,7 +211,7 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
                   </div>
                   <div>
                     <span className="text-muted text-xs" style={{ display: "block", marginBottom: 4 }}>Nama Atasan Langsung</span>
-                    <span style={{ fontWeight: 600 }}>{employee.namaAtasan || "—"}</span>
+                    <span style={{ fontWeight: 600 }}>{employee.atasan?.name || "—"}</span>
                   </div>
                   <div>
                     <span className="text-muted text-xs" style={{ display: "block", marginBottom: 4 }}>Tanggal Bergabung</span>

@@ -110,7 +110,34 @@ export async function getCalendarEvents(startDateInput?: string, endDateInput?: 
       attachmentUrl: isKaryawan ? null : req.attachmentUrl,
     }));
 
-    const events = [...mappedLeaves, ...mappedExcuses];
+    // Query holidays that overlap with the range
+    const holidays = await prisma.holiday.findMany({
+      where: {
+        AND: [
+          { date: { lte: end } },
+          { date: { gte: start } },
+        ],
+      },
+    });
+
+    // Map holidays to unified event schema
+    const mappedHolidays = holidays.map((h) => ({
+      id: h.id,
+      userId: "system-holiday",
+      userName: "Hari Libur Nasional",
+      department: "Semua Departemen",
+      subCompanyId: "all",
+      subCompanyName: "Semua Unit Bisnis",
+      category: "HOLIDAY",
+      type: "HARI_LIBUR",
+      startDate: h.date.toISOString().substring(0, 10),
+      endDate: h.date.toISOString().substring(0, 10),
+      totalDays: 1,
+      reason: h.description,
+      attachmentUrl: null,
+    }));
+
+    const events = [...mappedLeaves, ...mappedExcuses, ...mappedHolidays];
 
     return { events };
   } catch (error: any) {

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { syncAllEmployeeQuotas } from "@/lib/quota";
 
 // Manage global settings
 export async function updateCompanySettings(formData: FormData) {
@@ -341,3 +342,23 @@ export async function deleteAdminUser(id: string) {
     return { error: "Gagal menghapus akun administrator." };
   }
 }
+
+export async function triggerManualQuotaSync() {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || (session.user.role !== "SUPERADMIN" && session.user.role !== "ADMIN")) {
+      return { error: "Akses ditolak. Hanya Administrator yang dapat memicu sinkronisasi." };
+    }
+
+    const cyclesCreated = await syncAllEmployeeQuotas(session.user.id);
+
+    revalidatePath("/karyawan");
+    revalidatePath("/kuota-tahunan");
+    revalidatePath("/pengaturan");
+    return { success: true, cyclesCreated };
+  } catch (error: any) {
+    console.error("Error triggering manual quota sync:", error);
+    return { error: "Gagal menjalankan sinkronisasi kuota cuti karyawan." };
+  }
+}
+

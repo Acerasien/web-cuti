@@ -51,6 +51,7 @@ model User {
   lokasiKerja  String?  @map("lokasi_kerja")
   namaAtasan   String?  @map("nama_atasan")
   subCompanyId String?  @map("sub_company_id")
+  atasanId     String?  @map("atasan_id")
   joinDate     DateTime @map("join_date") @db.Date
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -64,6 +65,8 @@ model User {
   annualQuotas         AnnualLeaveQuota[] @relation("UserQuotas")
   createdQuotas        AnnualLeaveQuota[] @relation("CreatorQuotas")
   subCompany           SubCompany?      @relation(fields: [subCompanyId], references: [id], onDelete: SetNull)
+  atasan               User?            @relation("UserAtasan", fields: [atasanId], references: [id], onDelete: SetNull)
+  bawahan              User[]           @relation("UserAtasan")
 
   @@map("users")
 }

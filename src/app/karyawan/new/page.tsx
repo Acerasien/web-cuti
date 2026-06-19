@@ -23,10 +23,26 @@ export default async function NewKaryawanPage() {
     orderBy: { name: "asc" },
   });
 
+  const potentialSupervisors = await prisma.user.findMany({
+    where: {
+      role: "KARYAWAN",
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      level: true,
+    },
+    orderBy: { name: "asc" },
+  });
+
   return (
     <PageWrapper title="Tambah Karyawan Baru">
       <div style={{ maxWidth: "600px", margin: "0 auto" }}>
-        <KaryawanForm subCompanies={subCompanies.map((sc) => ({ id: sc.id, name: sc.name }))} />
+        <KaryawanForm 
+          subCompanies={subCompanies.map((sc) => ({ id: sc.id, name: sc.name }))} 
+          potentialSupervisors={potentialSupervisors}
+        />
       </div>
     </PageWrapper>
   );

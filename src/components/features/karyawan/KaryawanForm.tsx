@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { HIERARCHY_RANKS } from "@/lib/hierarchy";
 import { createKaryawanUser, updateKaryawanUser, deleteKaryawanUser } from "@/lib/actions/karyawan";
 import {
   User,
@@ -35,15 +36,16 @@ interface KaryawanFormProps {
     department: string | null;
     position: string | null;
     lokasiKerja: string | null;
-    namaAtasan: string | null;
+    atasanId: string | null;
     subCompanyId: string | null;
     joinDate: string;
     isActive: boolean;
   };
   subCompanies?: { id: string; name: string }[];
+  potentialSupervisors?: { id: string; name: string; level: string | null }[];
 }
 
-export function KaryawanForm({ initialData, subCompanies = [] }: KaryawanFormProps) {
+export function KaryawanForm({ initialData, subCompanies = [], potentialSupervisors = [] }: KaryawanFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -59,8 +61,22 @@ export function KaryawanForm({ initialData, subCompanies = [] }: KaryawanFormPro
   const [department, setDepartment] = useState(initialData?.department ?? "");
   const [position, setPosition] = useState(initialData?.position ?? "");
   const [lokasiKerja, setLokasiKerja] = useState(initialData?.lokasiKerja ?? "");
-  const [namaAtasan, setNamaAtasan] = useState(initialData?.namaAtasan ?? "");
+  const [atasanId, setAtasanId] = useState(initialData?.atasanId ?? "");
   const [subCompanyId, setSubCompanyId] = useState(initialData?.subCompanyId ?? "");
+
+  // Filter supervisors by current selected employee level
+  const eligibleSupervisors = useMemo(() => {
+    if (!level) return [];
+    return potentialSupervisors.filter((sup) => {
+      // 1. Prevent self-selection
+      if (isEditMode && sup.id === initialData?.id) return false;
+      
+      // 2. Must be strictly higher rank
+      const empRank = HIERARCHY_RANKS[level] || 0;
+      const supRank = HIERARCHY_RANKS[sup.level || ""] || 0;
+      return supRank > empRank;
+    });
+  }, [level, potentialSupervisors, initialData, isEditMode]);
 
   // Format initial join date to YYYY-MM-DD
   const formatJoinDateInitial = () => {
@@ -123,7 +139,7 @@ export function KaryawanForm({ initialData, subCompanies = [] }: KaryawanFormPro
       formData.append("department", department);
       formData.append("position", position);
       formData.append("lokasiKerja", lokasiKerja);
-      formData.append("namaAtasan", namaAtasan);
+      formData.append("atasanId", atasanId);
       formData.append("subCompanyId", subCompanyId);
       formData.append("joinDate", joinDate);
 
@@ -345,6 +361,8 @@ export function KaryawanForm({ initialData, subCompanies = [] }: KaryawanFormPro
                     <option value="Staff - Superintendent">Staff - Superintendent</option>
                     <option value="Staff - Supervisor">Staff - Supervisor</option>
                     <option value="Staff - Foreman">Staff - Foreman</option>
+                    <option value="Staff - Manager">Staff - Manager</option>
+                    <option value="Staff - General Manager">Staff - General Manager</option>
                   </select>
                 </div>
               </div>
@@ -453,8 +471,8 @@ export function KaryawanForm({ initialData, subCompanies = [] }: KaryawanFormPro
               </div>
 
               <div className="form-group">
-                <label htmlFor="namaAtasan" className="form-label">
-                  Nama Atasan Langsung
+                <label htmlFor="atasanId" className="form-label">
+                  Atasan Langsung (Supervisor)
                 </label>
                 <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
                   <UserCheck
@@ -462,16 +480,25 @@ export function KaryawanForm({ initialData, subCompanies = [] }: KaryawanFormPro
                     className="text-light"
                     style={{ position: "absolute", left: 12, pointerEvents: "none" }}
                   />
-                  <input
-                    id="namaAtasan"
-                    type="text"
-                    className="form-input w-full"
+                  <select
+                    id="atasanId"
+                    className="form-select w-full"
                     style={{ paddingLeft: 38 }}
-                    placeholder="Contoh: John Doe"
-                    value={namaAtasan}
-                    onChange={(e) => setNamaAtasan(e.target.value)}
-                    disabled={isPending}
-                  />
+                    value={atasanId}
+                    onChange={(e) => setAtasanId(e.target.value)}
+                    disabled={isPending || !level}
+                  >
+                    <option value="">
+                      {!level 
+                        ? "Pilih Level Karyawan Terlebih Dahulu..." 
+                        : "Pilih Atasan Langsung..."}
+                    </option>
+                    {eligibleSupervisors.map((sup) => (
+                      <option key={sup.id} value={sup.id}>
+                        {sup.name} ({sup.level || "—"})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>

@@ -11,6 +11,7 @@ import {
   createAdminUser,
   updateAdminUser,
   deleteAdminUser,
+  triggerManualQuotaSync,
 } from "@/lib/actions/settings";
 import {
   Building2,
@@ -28,6 +29,7 @@ import {
   Edit2,
   Activity,
   UserCheck,
+  RefreshCw,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 
@@ -82,6 +84,28 @@ export function SettingsPageClient({
   );
   const [settingsError, setSettingsError] = useState("");
   const [settingsSuccess, setSettingsSuccess] = useState(false);
+
+  // System Maintenance Sync State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [syncSuccess, setSyncSuccess] = useState<number | null>(null);
+
+  const handleSyncQuotas = () => {
+    setSyncError("");
+    setSyncSuccess(null);
+    setIsSyncing(true);
+
+    startTransition(async () => {
+      const res = await triggerManualQuotaSync();
+      setIsSyncing(false);
+      if (res?.error) {
+        setSyncError(res.error);
+      } else {
+        setSyncSuccess(res.cyclesCreated ?? 0);
+        router.refresh();
+      }
+    });
+  };
 
   // Sub-Company Add State
   const [newSubCompanyName, setNewSubCompanyName] = useState("");
@@ -508,6 +532,75 @@ export function SettingsPageClient({
                   )}
                 </button>
               </form>
+            </div>
+          </div>
+
+          {/* System Maintenance & Sync Card */}
+          <div className="card-outer mt-6">
+            <div className="card-inner">
+              <div className="flex items-center gap-2 mb-4">
+                <RefreshCw size={20} className="text-primary" />
+                <h3 className="card-title" style={{ margin: 0 }}>
+                  Pemeliharaan Sistem
+                </h3>
+              </div>
+              
+              <p className="text-sm text-muted mb-4" style={{ lineHeight: 1.4 }}>
+                Gunakan menu ini untuk memperbarui dan membuat siklus kuota cuti tahunan baru secara otomatis bagi semua karyawan yang siklus lamanya telah berakhir.
+              </p>
+
+              {syncError && (
+                <div
+                  className="form-error mb-4"
+                  style={{
+                    padding: "var(--space-2) var(--space-3)",
+                    background: "var(--color-danger-light)",
+                    color: "var(--color-danger)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid rgba(220,38,38,0.2)",
+                    fontSize: "var(--text-xs)",
+                  }}
+                >
+                  {syncError}
+                </div>
+              )}
+
+              {syncSuccess !== null && (
+                <div
+                  className="mb-4"
+                  style={{
+                    padding: "var(--space-2) var(--space-3)",
+                    background: "var(--color-success-light)",
+                    color: "var(--color-success)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid rgba(22,163,74,0.2)",
+                    fontSize: "var(--text-xs)",
+                    fontWeight: 500,
+                  }}
+                >
+                  Sinkronisasi berhasil! Sebanyak {syncSuccess} siklus kuota baru telah dibuat/diperbarui.
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleSyncQuotas}
+                disabled={isSyncing}
+                className="btn btn-outline w-full"
+                style={{ minHeight: 46, gap: 8 }}
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
+                    Menyelaraskan Kuota Karyawan...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={16} />
+                    Sinkronisasi Kuota Cuti Karyawan
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

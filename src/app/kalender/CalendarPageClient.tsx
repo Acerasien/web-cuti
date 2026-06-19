@@ -21,7 +21,7 @@ interface CalendarEvent {
   department: string;
   subCompanyId: string;
   subCompanyName: string;
-  category: "LEAVE" | "EXCUSE";
+  category: "LEAVE" | "EXCUSE" | "HOLIDAY";
   type: string;
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
@@ -73,7 +73,14 @@ function getLeaveTypeLabel(type: string): string {
   return map[type] ?? type.replace(/_/g, " ");
 }
 
-function getEventStyle(category: "LEAVE" | "EXCUSE", type: string) {
+function getEventStyle(category: "LEAVE" | "EXCUSE" | "HOLIDAY", type: string) {
+  if (category === "HOLIDAY") {
+    return {
+      bg: "#FFF1F2", // rose-50
+      border: "1px solid #FFE4E6", // rose-100
+      text: "#E11D48", // rose-600
+    };
+  }
   if (type === "SAKIT") {
     return {
       bg: "#FEF2F2",
@@ -179,6 +186,9 @@ export function CalendarPageClient({
   // Filter events
   const filteredEvents = useMemo(() => {
     return initialEvents.filter((event) => {
+      if (event.category === "HOLIDAY") {
+        return true; // Holidays are always shown regardless of department/subcompany filters
+      }
       const matchSub = selectedSubCompany === "all" || event.subCompanyId === selectedSubCompany;
       const matchDept = selectedDepartment === "all" || event.department === selectedDepartment;
       return matchSub && matchDept;
@@ -331,6 +341,9 @@ export function CalendarPageClient({
               const isCurrentMonth = date.getMonth() === currentMonth;
               const isToday = formatDateLocal(new Date()) === dateStr;
               const dateEvents = eventsByDate[dateStr] || [];
+              const isSunday = date.getDay() === 0;
+              const hasHoliday = dateEvents.some((e) => e.category === "HOLIDAY");
+              const isRedDay = isSunday || hasHoliday;
 
               return (
                 <div
@@ -367,7 +380,13 @@ export function CalendarPageClient({
                       style={{
                         fontSize: "var(--text-xs)",
                         fontWeight: 700,
-                        color: isToday ? "#FFFFFF" : isCurrentMonth ? "var(--color-text)" : "var(--color-text-light)",
+                        color: isToday
+                          ? "#FFFFFF"
+                          : isRedDay
+                            ? (isCurrentMonth ? "var(--color-danger)" : "rgba(220, 38, 38, 0.5)")
+                            : isCurrentMonth
+                              ? "var(--color-text)"
+                              : "var(--color-text-light)",
                         backgroundColor: isToday ? "var(--color-primary)" : "transparent",
                         width: isToday ? 22 : "auto",
                         height: isToday ? 22 : "auto",
@@ -417,7 +436,7 @@ export function CalendarPageClient({
                             e.currentTarget.style.transform = "none";
                           }}
                         >
-                          {event.userName}
+                          {event.category === "HOLIDAY" ? event.reason : event.userName}
                         </button>
                       );
                     })}
@@ -487,7 +506,15 @@ export function CalendarPageClient({
           <div className="modal animate-scale" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "450px" }}>
             <div className="modal-header">
               <h3 className="modal-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Calendar size={18} className="text-primary" /> Rincian Absensi Karyawan
+                {selectedEvent.category === "HOLIDAY" ? (
+                  <>
+                    <Calendar size={18} style={{ color: "var(--color-danger)" }} /> Rincian Hari Libur
+                  </>
+                ) : (
+                  <>
+                    <Calendar size={18} className="text-primary" /> Rincian Absensi Karyawan
+                  </>
+                )}
               </h3>
               <button className="btn btn-ghost btn-icon" onClick={() => setSelectedEvent(null)} style={{ minHeight: 32, minWidth: 32, padding: 0 }}>
                 <X size={16} />
@@ -496,12 +523,22 @@ export function CalendarPageClient({
             <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {/* Profile Card Header */}
               <div className="flex items-center gap-3" style={{ borderBottom: "1px solid var(--color-border)", paddingBottom: 16 }}>
-                <div className="sidebar-avatar" style={{ width: 44, height: 44, fontSize: "var(--text-base)" }}>
-                  {selectedEvent.userName.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase()}
-                </div>
+                {selectedEvent.category === "HOLIDAY" ? (
+                  <div className="stat-icon danger" style={{ width: 44, height: 44, borderRadius: "50%" }}>
+                    <Calendar size={20} />
+                  </div>
+                ) : (
+                  <div className="sidebar-avatar" style={{ width: 44, height: 44, fontSize: "var(--text-base)" }}>
+                    {selectedEvent.userName.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase()}
+                  </div>
+                )}
                 <div>
-                  <h4 style={{ margin: 0, fontWeight: 700, fontSize: "var(--text-base)" }}>{selectedEvent.userName}</h4>
-                  <p className="text-xs text-muted">{selectedEvent.department} • {selectedEvent.subCompanyName}</p>
+                  <h4 style={{ margin: 0, fontWeight: 700, fontSize: "var(--text-base)" }}>
+                    {selectedEvent.category === "HOLIDAY" ? selectedEvent.reason : selectedEvent.userName}
+                  </h4>
+                  <p className="text-xs text-muted">
+                    {selectedEvent.category === "HOLIDAY" ? "Hari Libur Nasional" : `${selectedEvent.department} • ${selectedEvent.subCompanyName}`}
+                  </p>
                 </div>
               </div>
 
@@ -509,13 +546,13 @@ export function CalendarPageClient({
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: "var(--text-sm)" }}>
                 <div>
                   <span className="text-muted text-xs" style={{ display: "block", marginBottom: 2 }}>Jenis Pengajuan</span>
-                  <span style={{ fontWeight: 600 }} className="badge badge-info">
-                    {getLeaveTypeLabel(selectedEvent.type)}
+                  <span style={{ fontWeight: 600 }} className={`badge ${selectedEvent.category === "HOLIDAY" ? "badge-rejected" : "badge-info"}`}>
+                    {selectedEvent.category === "HOLIDAY" ? "Hari Libur" : getLeaveTypeLabel(selectedEvent.type)}
                   </span>
                 </div>
                 <div>
-                  <span className="text-muted text-xs" style={{ display: "block", marginBottom: 2 }}>Durasi Cuti</span>
-                  <span style={{ fontWeight: 700 }}>{selectedEvent.totalDays} Hari Kerja</span>
+                  <span className="text-muted text-xs" style={{ display: "block", marginBottom: 2 }}>Durasi</span>
+                  <span style={{ fontWeight: 700 }}>{selectedEvent.totalDays} Hari</span>
                 </div>
                 <div>
                   <span className="text-muted text-xs" style={{ display: "block", marginBottom: 2 }}>Tanggal Mulai</span>
@@ -532,7 +569,22 @@ export function CalendarPageClient({
               </div>
 
               {/* Role-based details visibility */}
-              {isAdmin ? (
+              {selectedEvent.category === "HOLIDAY" ? (
+                <div
+                  style={{
+                    backgroundColor: "var(--color-bg)",
+                    padding: "12px",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--color-border)",
+                    marginTop: 4,
+                  }}
+                >
+                  <span className="text-muted text-xs" style={{ display: "block", marginBottom: 2 }}>Keterangan Libur</span>
+                  <p style={{ fontSize: "var(--text-xs)", margin: 0, lineHeight: 1.4, color: "var(--color-text)", fontWeight: 500 }}>
+                    {selectedEvent.reason || "Tidak ada keterangan tambahan."}
+                  </p>
+                </div>
+              ) : isAdmin ? (
                 <div
                   style={{
                     backgroundColor: "var(--color-bg)",
@@ -583,7 +635,7 @@ export function CalendarPageClient({
               )}
             </div>
             <div className="modal-footer" style={{ borderTop: "1px solid var(--color-border)", padding: "12px var(--space-6)" }}>
-              {isAdmin && (
+              {isAdmin && selectedEvent.category !== "HOLIDAY" && (
                 <a
                   href={selectedEvent.category === "LEAVE" ? `/cuti/${selectedEvent.id}` : `/izin/${selectedEvent.id}`}
                   className="btn btn-outline btn-sm"
@@ -642,8 +694,12 @@ export function CalendarPageClient({
                     }}
                   >
                     <div>
-                      <p style={{ margin: 0, fontWeight: 700, fontSize: "var(--text-sm)" }}>{event.userName}</p>
-                      <p className="text-muted" style={{ fontSize: "10px", margin: 0 }}>{event.department}</p>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: "var(--text-sm)" }}>
+                        {event.category === "HOLIDAY" ? event.reason : event.userName}
+                      </p>
+                      <p className="text-muted" style={{ fontSize: "10px", margin: 0 }}>
+                        {event.category === "HOLIDAY" ? "Hari Libur Nasional" : event.department}
+                      </p>
                     </div>
                     <span
                       style={{

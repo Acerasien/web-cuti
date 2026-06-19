@@ -242,7 +242,9 @@ export default async function DashboardPage() {
                 </div>
                 <a href="/cuti/new" className="btn btn-primary w-full">
                   Ajukan Cuti
-                  <span className="btn-icon-circle">→</span>
+                  <span className="btn-icon-circle">
+                    <ArrowRight size={14} />
+                  </span>
                 </a>
               </div>
             </div>
@@ -260,7 +262,9 @@ export default async function DashboardPage() {
                 </div>
                 <a href="/izin/new" className="btn btn-accent w-full">
                   Ajukan Izin
-                  <span className="btn-icon-circle">→</span>
+                  <span className="btn-icon-circle">
+                    <ArrowRight size={14} />
+                  </span>
                 </a>
               </div>
             </div>
@@ -293,7 +297,11 @@ export default async function DashboardPage() {
                         : `${formatDate((act as any).dateFrom)} s/d ${formatDate((act as any).dateTo)}`;
 
                     return (
-                      <div key={act.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--color-bg)", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border)", fontSize: "var(--text-sm)" }}>
+                      <Link
+                        key={act.id}
+                        href={isLeave ? `/cuti/${act.id}` : `/izin/${act.id}`}
+                        className="activity-row-link"
+                      >
                         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                           <div className={`stat-icon ${isLeave ? "primary" : "accent"}`} style={{ width: 36, height: 36, borderRadius: "50%" }}>
                             {isLeave ? <CalendarOff size={16} /> : <ClipboardList size={16} />}
@@ -309,11 +317,11 @@ export default async function DashboardPage() {
                           <span className={`badge badge-${act.status.toLowerCase()}`} style={{ fontSize: "10px" }}>
                             {act.status}
                           </span>
-                          <Link href={isLeave ? `/cuti/${act.id}` : `/izin/${act.id}`} className="text-primary" style={{ display: "flex", alignItems: "center" }}>
+                          <div className="text-primary activity-arrow-icon" style={{ display: "flex", alignItems: "center" }}>
                             <ArrowRight size={14} />
-                          </Link>
+                          </div>
                         </div>
-                      </div>
+                      </Link>
                     );
                   })}
                 </div>
