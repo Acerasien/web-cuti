@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["10.10.1.221"],
   // For VPS deployment: output standalone build
   // Uncomment when deploying to production:
   // output: "standalone",
