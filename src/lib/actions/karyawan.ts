@@ -456,4 +456,253 @@ export async function deleteKaryawanUser(userId: string) {
   }
 }
 
+export async function importKaryawanAction(records: any[]) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return { error: "Sesi Anda telah berakhir. Silakan login kembali." };
+    }
+
+    const currentUserRole = session.user.role;
+    if (currentUserRole !== "SUPERADMIN" && currentUserRole !== "ADMIN") {
+      return { error: "Anda tidak memiliki akses untuk mengimpor karyawan baru." };
+    }
+
+    if (!Array.isArray(records) || records.length === 0) {
+      return { error: "Data karyawan kosong atau tidak valid." };
+    }
+
+    // Prefetch database lookups to optimize performance
+    const subCompanies = await prisma.subCompany.findMany();
+    const subCompanyMap = new Map(subCompanies.map(sc => [sc.name.trim().toLowerCase(), sc.id]));
+
+    const existingUsers = await prisma.user.findMany({
+      select: {
+        nik: true,
+        email: true,
+        username: true
+      }
+    });
+
+    const dbNiks = new Set(existingUsers.map(u => u.nik?.trim().toLowerCase()).filter(Boolean));
+    const dbEmails = new Set(existingUsers.map(u => u.email?.trim().toLowerCase()).filter(Boolean));
+    const dbUsernames = new Set(existingUsers.map(u => u.username?.trim().toLowerCase()).filter(Boolean));
+
+    const companySettings = await prisma.companySetting.findFirst();
+    const defaultDays = companySettings?.defaultAnnualDays ?? 12;
+
+    const results = {
+      successCount: 0,
+      failedCount: 0,
+      errors: [] as { row: number; name: string; error: string }[]
+    };
+
+    // Tracking for internal batch duplicates
+    const batchNiks = new Set<string>();
+    const batchEmails = new Set<string>();
+    const batchUsernames = new Set<string>();
+
+    for (let i = 0; i < records.length; i++) {
+      const rowNum = i + 2; // Excel rows are 1-indexed, headers are row 1, data starts at row 2
+      const record = records[i];
+
+      // Normalize record keys (trim and case-insensitive matching)
+      const normalizedRecord: Record<string, any> = {};
+      for (const key of Object.keys(record)) {
+        normalizedRecord[key.trim().toLowerCase()] = record[key];
+      }
+
+      // Helper to get value case-insensitively
+      const getVal = (possibleKeys: string[]): string | null => {
+        for (const k of possibleKeys) {
+          const val = normalizedRecord[k.toLowerCase()];
+          if (val !== undefined && val !== null) {
+            return String(val).trim();
+          }
+        }
+        return null;
+      };
+
+      const name = getVal(["Nama Lengkap", "Nama", "name", "full name"]);
+      const nik = getVal(["NIK", "nik", "nomor induk karyawan"]);
+      const email = getVal(["Email", "email", "surel"]);
+      const username = getVal(["Username", "username"]);
+      const rawJoinDate = getVal(["Tanggal Bergabung (YYYY-MM-DD)", "Tanggal Bergabung", "join date", "joinDate"]);
+      const subCompanyName = getVal(["Unit Bisnis", "Sub Company", "subCompany", "unit_bisnis"]);
+      const department = getVal(["Departemen", "Department", "department"]);
+      const position = getVal(["Jabatan", "Position", "position", "jabatan"]);
+      const level = getVal(["Level", "level"]);
+      const lokasiKerja = getVal(["Lokasi Kerja", "Work Location", "lokasi_kerja", "lokasikerja"]);
+      const password = getVal(["Password", "password", "kata sandi"]);
+
+      const displayName = name || nik || email || username || `Baris ${rowNum}`;
+
+      // 1. Validate required name
+      if (!name) {
+        results.failedCount++;
+        results.errors.push({ row: rowNum, name: displayName, error: "Nama Lengkap wajib diisi." });
+        continue;
+      }
+
+      // 2. Validate at least Email or Username is present
+      const emailTrim = email || null;
+      const usernameTrim = username || null;
+      if (!emailTrim && !usernameTrim) {
+        results.failedCount++;
+        results.errors.push({ row: rowNum, name: displayName, error: "Salah satu dari Email atau Username wajib diisi agar karyawan dapat login." });
+        continue;
+      }
+
+      // 3. Validate Date
+      if (!rawJoinDate) {
+        results.failedCount++;
+        results.errors.push({ row: rowNum, name: displayName, error: "Tanggal Bergabung wajib diisi." });
+        continue;
+      }
+
+      let joinDate: Date;
+      // Handle Excel serial date or standard date parsing
+      if (!isNaN(Number(rawJoinDate))) {
+        // Excel serial date number
+        const serial = Number(rawJoinDate);
+        // Excel date starts from 1900-01-01
+        joinDate = new Date(Math.round((serial - 25569) * 86400 * 1000));
+      } else {
+        joinDate = new Date(rawJoinDate);
+      }
+
+      if (isNaN(joinDate.getTime())) {
+        results.failedCount++;
+        results.errors.push({ row: rowNum, name: displayName, error: `Format Tanggal Bergabung tidak valid: '${rawJoinDate}'. Harap gunakan format YYYY-MM-DD.` });
+        continue;
+      }
+
+      // 4. Validate unique NIK
+      if (nik) {
+        const nikLower = nik.toLowerCase();
+        if (batchNiks.has(nikLower)) {
+          results.failedCount++;
+          results.errors.push({ row: rowNum, name: displayName, error: `NIK ganda '${nik}' terdeteksi di dalam file Excel.` });
+          continue;
+        }
+        if (dbNiks.has(nikLower)) {
+          results.failedCount++;
+          results.errors.push({ row: rowNum, name: displayName, error: `NIK '${nik}' sudah digunakan oleh karyawan lain.` });
+          continue;
+        }
+        batchNiks.add(nikLower);
+      }
+
+      // 5. Validate unique Email
+      if (emailTrim) {
+        const emailLower = emailTrim.toLowerCase();
+        if (batchEmails.has(emailLower)) {
+          results.failedCount++;
+          results.errors.push({ row: rowNum, name: displayName, error: `Email ganda '${emailTrim}' terdeteksi di dalam file Excel.` });
+          continue;
+        }
+        if (dbEmails.has(emailLower)) {
+          results.failedCount++;
+          results.errors.push({ row: rowNum, name: displayName, error: `Email '${emailTrim}' sudah digunakan oleh akun lain.` });
+          continue;
+        }
+        batchEmails.add(emailLower);
+      }
+
+      // 6. Validate unique Username
+      if (usernameTrim) {
+        const usernameLower = usernameTrim.toLowerCase();
+        if (batchUsernames.has(usernameLower)) {
+          results.failedCount++;
+          results.errors.push({ row: rowNum, name: displayName, error: `Username ganda '${usernameTrim}' terdeteksi di dalam file Excel.` });
+          continue;
+        }
+        if (dbUsernames.has(usernameLower)) {
+          results.failedCount++;
+          results.errors.push({ row: rowNum, name: displayName, error: `Username '${usernameTrim}' sudah digunakan oleh akun lain.` });
+          continue;
+        }
+        batchUsernames.add(usernameLower);
+      }
+
+      // 7. Resolve Unit Bisnis
+      let subCompanyId: string | null = null;
+      if (subCompanyName) {
+        const matchingId = subCompanyMap.get(subCompanyName.toLowerCase());
+        if (!matchingId) {
+          results.failedCount++;
+          results.errors.push({ row: rowNum, name: displayName, error: `Unit Bisnis '${subCompanyName}' tidak ditemukan di database.` });
+          continue;
+        }
+        subCompanyId = matchingId;
+      }
+
+      // 8. Hash Password
+      // Fallback password is NIK or Username (in that order of priority)
+      const fallbackPassword = password || nik || usernameTrim;
+      if (!fallbackPassword) {
+        results.failedCount++;
+        results.errors.push({ row: rowNum, name: displayName, error: "Password kosong dan tidak ada NIK/Username untuk password default." });
+        continue;
+      }
+      const passwordHash = await bcrypt.hash(fallbackPassword, 12);
+
+      // Create Employee inside a try-catch for safety
+      try {
+        const user = await prisma.user.create({
+          data: {
+            name,
+            email: emailTrim,
+            username: usernameTrim,
+            passwordHash,
+            role: "KARYAWAN",
+            nik: nik || null,
+            level: level || null,
+            department: department || null,
+            position: position || null,
+            lokasiKerja: lokasiKerja || null,
+            subCompanyId,
+            joinDate,
+            isActive: true,
+          },
+        });
+
+        // Create Quota
+        const cycleStart = new Date(joinDate);
+        const cycleEnd = new Date(cycleStart);
+        cycleEnd.setFullYear(cycleEnd.getFullYear() + 1);
+        cycleEnd.setDate(cycleEnd.getDate() - 1);
+
+        await prisma.annualLeaveQuota.create({
+          data: {
+            userId: user.id,
+            cycleStart,
+            cycleEnd,
+            totalDays: defaultDays,
+            createdById: session.user.id,
+          },
+        });
+
+        results.successCount++;
+
+        // Add dynamically created values to prefetch caches to support back-to-back duplicate detections (though we already checked batch sets)
+        if (nik) dbNiks.add(nik.toLowerCase());
+        if (emailTrim) dbEmails.add(emailTrim.toLowerCase());
+        if (usernameTrim) dbUsernames.add(usernameTrim.toLowerCase());
+
+      } catch (rowError: any) {
+        console.error(`Error importing row ${rowNum}:`, rowError);
+        results.failedCount++;
+        results.errors.push({ row: rowNum, name: displayName, error: `Kesalahan database: ${rowError.message || "Gagal menyimpan data."}` });
+      }
+    }
+
+    revalidatePath("/karyawan");
+    return { success: true, results };
+  } catch (error: any) {
+    console.error("Error running importKaryawanAction:", error);
+    return { error: "Terjadi kesalahan server saat mengimpor data karyawan." };
+  }
+}
+
 
