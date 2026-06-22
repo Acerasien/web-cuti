@@ -222,8 +222,8 @@ export default async function DashboardPage() {
         <div className="bento-col-2 flex flex-col gap-6">
           {/* Quick Actions */}
           <div className="grid grid-2 gap-6">
-            <div className="card-outer">
-              <div className="card-inner flex flex-col justify-between h-full" style={{ minHeight: "180px" }}>
+            <div className="card-outer" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+              <div className="card-inner flex flex-col justify-between" style={{ flex: 1, minHeight: "180px" }}>
                 <div>
                   <div className="flex justify-between items-start mb-4">
                     <h3 className="card-title">Cuti & Izin</h3>
@@ -242,8 +242,8 @@ export default async function DashboardPage() {
               </div>
             </div>
 
-            <div className="card-outer">
-              <div className="card-inner flex flex-col justify-between h-full" style={{ minHeight: "180px" }}>
+            <div className="card-outer" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+              <div className="card-inner flex flex-col justify-between" style={{ flex: 1, minHeight: "180px" }}>
                 <div>
                   <div className="flex justify-between items-start mb-4">
                     <h3 className="card-title">Kalender Bersama</h3>
