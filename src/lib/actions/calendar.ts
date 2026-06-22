@@ -24,25 +24,31 @@ export async function getCalendarEvents(startDateInput?: string, endDateInput?: 
       end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     }
 
-    // Query APPROVED leave requests that overlap with the range
-    const leaveRequests = await prisma.leaveRequest.findMany({
+    // Query APPROVED leave segments that overlap with the range
+    const leaveSegments = await prisma.leaveSegment.findMany({
       where: {
-        status: RequestStatus.APPROVED,
+        leaveRequest: {
+          status: RequestStatus.APPROVED,
+        },
         AND: [
           { startDate: { lte: end } },
           { endDate: { gte: start } },
         ],
       },
       include: {
-        user: {
-          select: {
-            name: true,
-            role: true,
-            department: true,
-            subCompanyId: true,
-            subCompany: {
+        leaveRequest: {
+          include: {
+            user: {
               select: {
                 name: true,
+                role: true,
+                department: true,
+                subCompanyId: true,
+                subCompany: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -50,64 +56,21 @@ export async function getCalendarEvents(startDateInput?: string, endDateInput?: 
       },
     });
 
-    // Query APPROVED excuse requests that overlap with the range
-    const excuseRequests = await prisma.excuseRequest.findMany({
-      where: {
-        status: RequestStatus.APPROVED,
-        AND: [
-          { dateFrom: { lte: end } },
-          { dateTo: { gte: start } },
-        ],
-      },
-      include: {
-        user: {
-          select: {
-            name: true,
-            role: true,
-            department: true,
-            subCompanyId: true,
-            subCompany: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    // Map leave requests to unified event schema
-    const mappedLeaves = leaveRequests.map((req) => ({
-      id: req.id,
-      userId: req.userId,
-      userName: req.user.name,
-      department: req.user.department || "Tidak Ada Departemen",
-      subCompanyId: req.user.subCompanyId || "no-subcompany",
-      subCompanyName: req.user.subCompany?.name || "Tidak Ada Unit Bisnis",
-      category: "LEAVE",
-      type: req.leaveType,
-      startDate: req.startDate.toISOString().substring(0, 10),
-      endDate: req.endDate.toISOString().substring(0, 10),
-      totalDays: req.totalDays,
-      reason: isKaryawan ? null : req.reason,
-      attachmentUrl: isKaryawan ? null : req.attachmentUrl,
-    }));
-
-    // Map excuse requests to unified event schema
-    const mappedExcuses = excuseRequests.map((req) => ({
-      id: req.id,
-      userId: req.userId,
-      userName: req.user.name,
-      department: req.user.department || "Tidak Ada Departemen",
-      subCompanyId: req.user.subCompanyId || "no-subcompany",
-      subCompanyName: req.user.subCompany?.name || "Tidak Ada Unit Bisnis",
-      category: "EXCUSE",
-      type: req.excuseType,
-      startDate: req.dateFrom.toISOString().substring(0, 10),
-      endDate: req.dateTo.toISOString().substring(0, 10),
-      totalDays: Number(req.totalDays || 0),
-      reason: isKaryawan ? null : req.reason,
-      attachmentUrl: isKaryawan ? null : req.attachmentUrl,
+    // Map segments to unified event schema
+    const mappedLeaves = leaveSegments.map((seg) => ({
+      id: seg.leaveRequestId, // Navigate to the parent LeaveRequest detail page
+      userId: seg.leaveRequest.userId,
+      userName: seg.leaveRequest.user.name,
+      department: seg.leaveRequest.user.department || "Tidak Ada Departemen",
+      subCompanyId: seg.leaveRequest.user.subCompanyId || "no-subcompany",
+      subCompanyName: seg.leaveRequest.user.subCompany?.name || "Tidak Ada Unit Bisnis",
+      category: "LEAVE" as const,
+      type: seg.leaveType,
+      startDate: seg.startDate.toISOString().substring(0, 10),
+      endDate: seg.endDate.toISOString().substring(0, 10),
+      totalDays: Number(seg.totalDays),
+      reason: isKaryawan ? null : seg.leaveRequest.reason,
+      attachmentUrl: isKaryawan ? null : seg.leaveRequest.attachmentUrl,
     }));
 
     // Query holidays that overlap with the range
@@ -128,7 +91,7 @@ export async function getCalendarEvents(startDateInput?: string, endDateInput?: 
       department: "Semua Departemen",
       subCompanyId: "all",
       subCompanyName: "Semua Unit Bisnis",
-      category: "HOLIDAY",
+      category: "HOLIDAY" as const,
       type: "HARI_LIBUR",
       startDate: h.date.toISOString().substring(0, 10),
       endDate: h.date.toISOString().substring(0, 10),
@@ -137,7 +100,7 @@ export async function getCalendarEvents(startDateInput?: string, endDateInput?: 
       attachmentUrl: null,
     }));
 
-    const events = [...mappedLeaves, ...mappedExcuses, ...mappedHolidays];
+    const events = [...mappedLeaves, ...mappedHolidays];
 
     return { events };
   } catch (error: any) {

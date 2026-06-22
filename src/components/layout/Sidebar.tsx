@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Users,
   CalendarOff,
-  ClipboardList,
   Calendar,
   Settings,
   LogOut,
@@ -36,14 +35,8 @@ const navItems: NavItem[] = [
   },
   {
     href: "/cuti",
-    label: "Cuti Khusus & Sakit",
+    label: "Cuti & Izin",
     icon: <CalendarOff size={18} />,
-    roles: ["SUPERADMIN", "ADMIN", "KARYAWAN"],
-  },
-  {
-    href: "/izin",
-    label: "Izin & Keterangan",
-    icon: <ClipboardList size={18} />,
     roles: ["SUPERADMIN", "ADMIN", "KARYAWAN"],
   },
   {

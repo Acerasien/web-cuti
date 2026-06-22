@@ -11,15 +11,17 @@ import { ExportCsvPanel } from "@/components/features/reports/ExportCsvPanel";
 function getLeaveTypeLabel(type: string): string {
   const map: Record<string, string> = {
     PERNIKAHAN_KARYAWAN: "Pernikahan Karyawan",
-    PERNIKAHAN_ANAK: "Pernikahan Anak Kandung",
-    KHITAN_BAPTIS: "Khitan / Baptis Anak Kandung",
-    ISTRI_MELAHIRKAN: "Istri Melahirkan / Keguguran",
-    KEMATIAN_KELUARGA: "Kematian Keluarga",
-    KARYAWATI_MELAHIRKAN: "Karyawati Melahirkan",
-    KARYAWATI_KEGUGURAN: "Karyawati Keguguran",
+    PERNIKAHAN_ANAK: "Pernikahan Anak",
+    KHITAN_BAPTIS: "Khitan/Baptis Anak",
+    ISTRI_MELAHIRKAN: "Istri Melahirkan",
+    KEMATIAN_KELUARGA: "Cuti Duka Cita",
+    KARYAWATI_MELAHIRKAN: "Melahirkan (Karyawati)",
+    KARYAWATI_KEGUGURAN: "Keguguran (Karyawati)",
     SAKIT: "Sakit (Surat Dokter)",
+    CUTI_TAHUNAN: "Cuti Tahunan",
+    IZIN_LAINNYA: "Izin Lainnya",
   };
-  return map[type] ?? type;
+  return map[type] ?? type.replace(/_/g, " ");
 }
 
 function formatDate(date: Date): string {
@@ -50,25 +52,49 @@ export default async function LeaveListPage() {
           department: true,
         },
       },
+      segments: true,
     },
     orderBy: { createdAt: "desc" },
   });
 
+  const processedLeaves = leaves.map((leave) => {
+    const startDates = leave.segments.map((s) => new Date(s.startDate).getTime());
+    const endDates = leave.segments.map((s) => new Date(s.endDate).getTime());
+    const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : null;
+    const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : null;
+    const totalDays = leave.segments.reduce((sum, s) => sum + Number(s.totalDays || 0), 0);
+
+    const typeLabels = Array.from(new Set(leave.segments.map((s) => s.leaveType)))
+      .map((t) => getLeaveTypeLabel(t))
+      .join(", ");
+
+    const dateRangeStr = earliestStart && latestEnd
+      ? `${formatDate(earliestStart)} s/d ${formatDate(latestEnd)}`
+      : "—";
+
+    return {
+      ...leave,
+      typeLabels,
+      dateRangeStr,
+      totalDays,
+    };
+  });
+
   return (
-    <PageWrapper title="Cuti Khusus & Sakit">
+    <PageWrapper title="Cuti & Izin">
       <div className="flex flex-col gap-6">
         {/* Top Header Actions */}
         <div className="flex justify-between items-center flex-wrap gap-4">
           <div>
             <p className="page-subtitle" style={{ margin: 0 }}>
               {isAdmin
-                ? "Daftar pengajuan cuti khusus dan sakit seluruh karyawan."
-                : "Daftar pengajuan cuti khusus dan sakit Anda."}
+                ? "Daftar pengajuan cuti dan izin seluruh karyawan."
+                : "Daftar pengajuan cuti dan izin Anda."}
             </p>
           </div>
           <Link href="/cuti/new" className="btn btn-primary">
             <Plus size={16} />
-            Ajukan Cuti
+            Buat Pengajuan
           </Link>
         </div>
 
@@ -77,11 +103,11 @@ export default async function LeaveListPage() {
         {/* List Table */}
         <div className="card-outer">
           <div className="card-inner" style={{ padding: 0 }}>
-            {leaves.length === 0 ? (
+            {processedLeaves.length === 0 ? (
               <div className="empty-state">
                 <CalendarOff />
-                <div className="empty-state-title">Belum ada pengajuan cuti</div>
-                <p>Silakan buat pengajuan cuti khusus atau sakit baru.</p>
+                <div className="empty-state-title">Belum ada pengajuan cuti atau izin</div>
+                <p>Silakan buat pengajuan cuti & izin baru.</p>
               </div>
             ) : (
               <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
@@ -89,16 +115,16 @@ export default async function LeaveListPage() {
                   <thead>
                     <tr>
                       {isAdmin && <th>Karyawan</th>}
-                      <th>Jenis Cuti</th>
-                      <th>Tanggal</th>
-                      <th>Durasi</th>
+                      <th>Jenis Pengajuan</th>
+                      <th>Tanggal Periode</th>
+                      <th>Durasi Kerja</th>
                       <th>Status</th>
                       <th>Tanggal Pengajuan</th>
                       <th>Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {leaves.map((leave) => (
+                    {processedLeaves.map((leave) => (
                       <tr key={leave.id}>
                         {isAdmin && (
                           <td>
@@ -111,13 +137,10 @@ export default async function LeaveListPage() {
                           </td>
                         )}
                         <td>
-                          <span style={{ fontWeight: 500 }}>{getLeaveTypeLabel(leave.leaveType)}</span>
+                          <span style={{ fontWeight: 500 }}>{leave.typeLabels}</span>
                         </td>
                         <td>
-                          <div className="flex flex-col text-sm">
-                            <span>{formatDate(leave.startDate)}</span>
-                            <span className="text-xs text-muted">s/d {formatDate(leave.endDate)}</span>
-                          </div>
+                          <span className="text-sm">{leave.dateRangeStr}</span>
                         </td>
                         <td>
                           <span style={{ fontWeight: 600 }}>{leave.totalDays} Hari</span>

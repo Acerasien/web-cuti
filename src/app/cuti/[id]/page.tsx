@@ -16,15 +16,17 @@ interface PageProps {
 function getLeaveTypeLabel(type: string): string {
   const map: Record<string, string> = {
     PERNIKAHAN_KARYAWAN: "Pernikahan Karyawan",
-    PERNIKAHAN_ANAK: "Pernikahan Anak Kandung",
-    KHITAN_BAPTIS: "Khitan / Baptis Anak Kandung",
-    ISTRI_MELAHIRKAN: "Istri Melahirkan / Keguguran",
-    KEMATIAN_KELUARGA: "Kematian Keluarga",
-    KARYAWATI_MELAHIRKAN: "Karyawati Melahirkan",
-    KARYAWATI_KEGUGURAN: "Karyawati Keguguran",
-    SAKIT: "Sakit (Dengan Surat Dokter)",
+    PERNIKAHAN_ANAK: "Pernikahan Anak",
+    KHITAN_BAPTIS: "Khitan/Baptis Anak",
+    ISTRI_MELAHIRKAN: "Istri Melahirkan",
+    KEMATIAN_KELUARGA: "Cuti Duka Cita",
+    KARYAWATI_MELAHIRKAN: "Melahirkan (Karyawati)",
+    KARYAWATI_KEGUGURAN: "Keguguran (Karyawati)",
+    SAKIT: "Sakit (Surat Dokter)",
+    CUTI_TAHUNAN: "Cuti Tahunan",
+    IZIN_LAINNYA: "Izin Lainnya",
   };
-  return map[type] ?? type;
+  return map[type] ?? type.replace(/_/g, " ");
 }
 
 function formatDate(date: Date): string {
@@ -48,6 +50,9 @@ export default async function LeaveDetailPage({ params }: PageProps) {
   const leave = await prisma.leaveRequest.findUnique({
     where: { id },
     include: {
+      segments: {
+        orderBy: { startDate: "asc" },
+      },
       user: {
         select: {
           id: true,
@@ -93,7 +98,12 @@ export default async function LeaveDetailPage({ params }: PageProps) {
     reviewerName = reviewer?.name ?? "";
   }
 
-  const isSingle = leave.startDate.getTime() === leave.endDate.getTime();
+  const startDates = leave.segments.map((s) => new Date(s.startDate).getTime());
+  const endDates = leave.segments.map((s) => new Date(s.endDate).getTime());
+  const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : new Date(leave.createdAt);
+  const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : new Date(leave.createdAt);
+  const totalDays = leave.segments.reduce((sum, s) => sum + Number(s.totalDays || 0), 0);
+  const isSingle = earliestStart.getTime() === latestEnd.getTime();
 
   return (
     <PageWrapper title="Detail Pengajuan Cuti">
@@ -107,7 +117,7 @@ export default async function LeaveDetailPage({ params }: PageProps) {
             </Link>
             <div style={{ display: "flex", gap: 8 }}>
               <PrintButton />
-              <DownloadDocxButton type="leave" data={JSON.parse(JSON.stringify(leave))} reviewerName={reviewerName} />
+              <DownloadDocxButton data={JSON.parse(JSON.stringify(leave))} reviewerName={reviewerName} />
             </div>
           </div>
 
@@ -206,23 +216,39 @@ export default async function LeaveDetailPage({ params }: PageProps) {
 
                   <div style={{ display: "flex", flexDirection: "column", gap: "14px", fontSize: "13px" }}>
                     <div>
-                      <span className="text-muted" style={{ display: "block", fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2px" }}>Jenis Cuti</span>
-                      <span style={{ fontWeight: 700, color: "var(--color-accent)", fontSize: "14px" }}>
-                        {getLeaveTypeLabel(leave.leaveType)}
-                      </span>
+                      <span className="text-muted" style={{ display: "block", fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>Detail Periode Pengajuan</span>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        {leave.segments.map((seg, index) => (
+                          <div key={seg.id} style={{
+                            background: "var(--color-bg)",
+                            padding: "8px 12px",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--color-border)",
+                            fontSize: "12px",
+                          }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600, color: "var(--color-text)", marginBottom: "2px" }}>
+                              <span>#{index + 1} {getLeaveTypeLabel(seg.leaveType)}</span>
+                              <span>{Number(seg.totalDays)} Hari</span>
+                            </div>
+                            <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+                              {formatDate(seg.startDate)} s/d {formatDate(seg.endDate)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div>
-                      <span className="text-muted" style={{ display: "block", fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2px" }}>Durasi Cuti</span>
-                      <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
-                        {leave.totalDays} Hari Kerja
+                      <span className="text-muted" style={{ display: "block", fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2px" }}>Total Durasi</span>
+                      <span style={{ fontWeight: 700, color: "var(--color-accent)", fontSize: "14px" }}>
+                        {totalDays} Hari Kerja
                       </span>
                     </div>
 
                     <div>
                       <span className="text-muted" style={{ display: "block", fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2px" }}>Rentang Tanggal</span>
                       <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
-                        {isSingle ? formatDate(leave.startDate) : `${formatDate(leave.startDate)} - ${formatDate(leave.endDate)}`}
+                        {isSingle ? formatDate(earliestStart) : `${formatDate(earliestStart)} - ${formatDate(latestEnd)}`}
                       </span>
                     </div>
 
@@ -632,7 +658,7 @@ export default async function LeaveDetailPage({ params }: PageProps) {
       {/* Print-Only Document */}
       <div className="print-only-container">
         <div style={{ textAlign: "center", marginBottom: "24px" }}>
-          <h2 style={{ fontSize: "20px", fontWeight: 700, textTransform: "uppercase", margin: 0 }}>Form Pengajuan Cuti Karyawan</h2>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, textTransform: "uppercase", margin: 0 }}>Form Pengajuan Cuti & Izin Karyawan</h2>
           <p style={{ fontSize: "12px", color: "#666", marginTop: "4px", margin: 0 }}>Sistem Manajemen Cuti & Izin — Web Cuti</p>
           <hr style={{ border: "0", borderTop: "2px double #333", marginTop: "12px", marginBottom: "20px" }} />
         </div>
@@ -666,27 +692,29 @@ export default async function LeaveDetailPage({ params }: PageProps) {
         <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "24px" }}>
           <thead>
             <tr>
-              <th colSpan={2} style={{ textAlign: "left", fontSize: "14px", borderBottom: "1px solid #333", paddingBottom: "6px", textTransform: "uppercase", fontWeight: 700 }}>Detail Pengajuan</th>
+              <th colSpan={3} style={{ textAlign: "left", fontSize: "14px", borderBottom: "1px solid #333", paddingBottom: "6px", textTransform: "uppercase", fontWeight: 700 }}>Detail Pengajuan Gabungan</th>
+            </tr>
+            <tr style={{ fontSize: "12px", borderBottom: "1px solid #ddd" }}>
+              <th style={{ textAlign: "left", padding: "6px 0" }}>Periode</th>
+              <th style={{ textAlign: "left", padding: "6px 0" }}>Jenis Cuti / Izin</th>
+              <th style={{ textAlign: "right", padding: "6px 0" }}>Durasi</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td style={{ width: "30%", padding: "8px 0", fontSize: "14px" }}>Jenis Cuti</td>
-              <td style={{ padding: "8px 0", fontSize: "14px", fontWeight: 600 }}>: {getLeaveTypeLabel(leave.leaveType)}</td>
+            {leave.segments.map((seg) => (
+              <tr key={seg.id} style={{ fontSize: "12px", borderBottom: "1px dashed #eee" }}>
+                <td style={{ padding: "6px 0" }}>{formatDate(seg.startDate)} s/d {formatDate(seg.endDate)}</td>
+                <td style={{ padding: "6px 0" }}>{getLeaveTypeLabel(seg.leaveType)}</td>
+                <td style={{ textAlign: "right", padding: "6px 0" }}>{Number(seg.totalDays)} Hari Kerja</td>
+              </tr>
+            ))}
+            <tr style={{ fontSize: "13px", fontWeight: 700 }}>
+              <td colSpan={2} style={{ padding: "10px 0", textAlign: "left" }}>Total Durasi Pengajuan</td>
+              <td style={{ padding: "10px 0", textAlign: "right" }}>{totalDays} Hari Kerja</td>
             </tr>
-            <tr>
-              <td style={{ padding: "8px 0", fontSize: "14px" }}>Tanggal Cuti</td>
-              <td style={{ padding: "8px 0", fontSize: "14px" }}>
-                : {formatDate(leave.startDate)} s/d {formatDate(leave.endDate)}
-              </td>
-            </tr>
-            <tr>
-              <td style={{ padding: "8px 0", fontSize: "14px" }}>Durasi Cuti</td>
-              <td style={{ padding: "8px 0", fontSize: "14px" }}>: {leave.totalDays} Hari Kerja</td>
-            </tr>
-            <tr>
-              <td style={{ padding: "8px 0", fontSize: "14px", verticalAlign: "top" }}>Alasan / Penjelasan</td>
-              <td style={{ padding: "8px 0", fontSize: "14px", whiteSpace: "pre-wrap" }}>: {leave.reason}</td>
+            <tr style={{ fontSize: "13px" }}>
+              <td style={{ padding: "10px 0", verticalAlign: "top" }}>Alasan / Penjelasan:</td>
+              <td colSpan={2} style={{ padding: "10px 0", whiteSpace: "pre-wrap" }}>{leave.reason}</td>
             </tr>
           </tbody>
         </table>

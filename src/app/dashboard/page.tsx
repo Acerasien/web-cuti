@@ -19,27 +19,18 @@ import Link from "next/link";
 
 function getLeaveTypeLabel(type: string): string {
   const map: Record<string, string> = {
-    PERNIKAHAN_KARYAWAN: "Cuti Pernikahan Karyawan",
-    PERNIKAHAN_ANAK: "Cuti Pernikahan Anak",
-    KHITAN_BAPTIS: "Cuti Khitan/Baptis Anak",
-    ISTRI_MELAHIRKAN: "Cuti Istri Melahirkan",
-    KEMATIAN_KELUARGA: "Cuti Kematian Keluarga",
-    KARYAWATI_MELAHIRKAN: "Cuti Karyawati Melahirkan",
-    KARYAWATI_KEGUGURAN: "Cuti Karyawati Keguguran",
+    PERNIKAHAN_KARYAWAN: "Pernikahan Karyawan",
+    PERNIKAHAN_ANAK: "Pernikahan Anak",
+    KHITAN_BAPTIS: "Khitan/Baptis Anak",
+    ISTRI_MELAHIRKAN: "Istri Melahirkan",
+    KEMATIAN_KELUARGA: "Cuti Duka Cita",
+    KARYAWATI_MELAHIRKAN: "Melahirkan (Karyawati)",
+    KARYAWATI_KEGUGURAN: "Keguguran (Karyawati)",
     SAKIT: "Sakit (Surat Dokter)",
-  };
-  return map[type] ?? type;
-}
-
-function getExcuseTypeLabel(type: string): string {
-  const map: Record<string, string> = {
-    TIDAK_ABSEN_MASUK: "Tidak Absen Masuk",
-    TIDAK_ABSEN_PULANG: "Tidak Absen Pulang",
-    DATANG_TERLAMBAT: "Datang Terlambat / Pulang Awal",
     CUTI_TAHUNAN: "Cuti Tahunan",
     IZIN_LAINNYA: "Izin Lainnya",
   };
-  return map[type] ?? type;
+  return map[type] ?? type.replace(/_/g, " ");
 }
 
 function formatDate(date: Date): string {
@@ -74,54 +65,30 @@ export default async function DashboardPage() {
   let remainingCuti = 0;
   let accruedCuti = 0;
   let usedCuti = 0;
+  let cutiBersamaCount = 0;
   let activeQuota: any = null;
   let quotaWarning: string | null = null;
   let totalEmployees = 0;
 
   if (isAdmin) {
     // Admin company-wide statistics
-    const pendingLeaves = await prisma.leaveRequest.count({ where: { status: "PENDING" } });
-    const pendingExcuses = await prisma.excuseRequest.count({ where: { status: "PENDING" } });
-    totalPending = pendingLeaves + pendingExcuses;
-
-    const approvedLeaves = await prisma.leaveRequest.count({
+    totalPending = await prisma.leaveRequest.count({ where: { status: "PENDING" } });
+    totalApproved = await prisma.leaveRequest.count({
       where: { status: "APPROVED", createdAt: { gte: startOfMonth, lte: endOfMonth } },
     });
-    const approvedExcuses = await prisma.excuseRequest.count({
-      where: { status: "APPROVED", createdAt: { gte: startOfMonth, lte: endOfMonth } },
-    });
-    totalApproved = approvedLeaves + approvedExcuses;
-
-    const rejectedLeaves = await prisma.leaveRequest.count({
+    totalRejected = await prisma.leaveRequest.count({
       where: { status: "REJECTED", createdAt: { gte: startOfMonth, lte: endOfMonth } },
     });
-    const rejectedExcuses = await prisma.excuseRequest.count({
-      where: { status: "REJECTED", createdAt: { gte: startOfMonth, lte: endOfMonth } },
-    });
-    totalRejected = rejectedLeaves + rejectedExcuses;
-
     totalEmployees = await prisma.user.count({ where: { isActive: true } });
   } else {
     // Employee self-only statistics
-    const pendingLeaves = await prisma.leaveRequest.count({ where: { userId, status: "PENDING" } });
-    const pendingExcuses = await prisma.excuseRequest.count({ where: { userId, status: "PENDING" } });
-    totalPending = pendingLeaves + pendingExcuses;
-
-    const approvedLeaves = await prisma.leaveRequest.count({
+    totalPending = await prisma.leaveRequest.count({ where: { userId, status: "PENDING" } });
+    totalApproved = await prisma.leaveRequest.count({
       where: { userId, status: "APPROVED", createdAt: { gte: startOfMonth, lte: endOfMonth } },
     });
-    const approvedExcuses = await prisma.excuseRequest.count({
-      where: { userId, status: "APPROVED", createdAt: { gte: startOfMonth, lte: endOfMonth } },
-    });
-    totalApproved = approvedLeaves + approvedExcuses;
-
-    const rejectedLeaves = await prisma.leaveRequest.count({
+    totalRejected = await prisma.leaveRequest.count({
       where: { userId, status: "REJECTED", createdAt: { gte: startOfMonth, lte: endOfMonth } },
     });
-    const rejectedExcuses = await prisma.excuseRequest.count({
-      where: { userId, status: "REJECTED", createdAt: { gte: startOfMonth, lte: endOfMonth } },
-    });
-    totalRejected = rejectedLeaves + rejectedExcuses;
 
     // Fetch active quota cycle
     activeQuota = await prisma.annualLeaveQuota.findFirst({
@@ -141,19 +108,32 @@ export default async function DashboardPage() {
     }
 
     if (activeQuota) {
-      const cycleApproved = await prisma.excuseRequest.aggregate({
+      const cycleApproved = await prisma.leaveSegment.aggregate({
         _sum: { totalDays: true },
         where: {
-          userId,
-          excuseType: "CUTI_TAHUNAN",
+          leaveRequest: {
+            userId,
+            status: "APPROVED",
+          },
+          leaveType: "CUTI_TAHUNAN",
           annualQuotaId: activeQuota.id,
-          status: "APPROVED",
         },
       });
 
       usedCuti = Number(cycleApproved._sum.totalDays || 0);
       accruedCuti = getAccruedQuotaDays(activeQuota.cycleStart, activeQuota.totalDays, now);
-      remainingCuti = Math.max(0, accruedCuti - usedCuti);
+
+      cutiBersamaCount = await prisma.holiday.count({
+        where: {
+          isCutiBersama: true,
+          date: {
+            gte: activeQuota.cycleStart,
+            lte: now,
+          },
+        },
+      });
+
+      remainingCuti = Math.max(0, accruedCuti - usedCuti - cutiBersamaCount);
 
       const cycleEndDate = new Date(activeQuota.cycleEnd);
       const diffTime = cycleEndDate.getTime() - now.getTime();
@@ -170,24 +150,37 @@ export default async function DashboardPage() {
   // 2. Fetch Recent Activities (Top 5)
   const recentLeaves = await prisma.leaveRequest.findMany({
     where: isAdmin ? {} : { userId },
-    include: { user: { select: { name: true } } },
+    include: {
+      user: { select: { name: true } },
+      segments: true,
+    },
     orderBy: { createdAt: "desc" },
     take: 5,
   });
 
-  const recentExcuses = await prisma.excuseRequest.findMany({
-    where: isAdmin ? {} : { userId },
-    include: { user: { select: { name: true } } },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
+  const recentActivities = recentLeaves.map((req) => {
+    const startDates = req.segments.map((s) => new Date(s.startDate).getTime());
+    const endDates = req.segments.map((s) => new Date(s.endDate).getTime());
+    const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : null;
+    const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : null;
 
-  const recentActivities = [
-    ...recentLeaves.map((r) => ({ ...r, category: "LEAVE" as const })),
-    ...recentExcuses.map((r) => ({ ...r, category: "EXCUSE" as const })),
-  ]
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .slice(0, 5);
+    const title = Array.from(new Set(req.segments.map((s) => s.leaveType)))
+      .map((t) => getLeaveTypeLabel(t))
+      .join(", ");
+
+    const range = earliestStart && latestEnd
+      ? `${formatDate(earliestStart)} s/d ${formatDate(latestEnd)}`
+      : "—";
+
+    return {
+      id: req.id,
+      title,
+      range,
+      status: req.status,
+      createdAt: req.createdAt,
+      userName: req.user.name,
+    };
+  });
 
   return (
     <div>
@@ -233,15 +226,15 @@ export default async function DashboardPage() {
               <div className="card-inner flex flex-col justify-between h-full" style={{ minHeight: "180px" }}>
                 <div>
                   <div className="flex justify-between items-start mb-4">
-                    <h3 className="card-title">Cuti Khusus & Sakit</h3>
+                    <h3 className="card-title">Cuti & Izin</h3>
                     <CalendarOff size={24} style={{ color: "var(--color-primary)", flexShrink: 0 }} />
                   </div>
                   <p className="card-subtitle mb-4">
-                    Pernikahan, Melahirkan, Kematian, Sakit dengan surat keterangan dokter, dll.
+                    Ajukan cuti tahunan, sakit, pernikahan, melahirkan, khitan/baptis, duka cita, atau izin lainnya.
                   </p>
                 </div>
                 <a href="/cuti/new" className="btn btn-primary w-full">
-                  Ajukan Cuti
+                  Buat Pengajuan
                   <span className="btn-icon-circle">
                     <ArrowRight size={14} />
                   </span>
@@ -253,15 +246,15 @@ export default async function DashboardPage() {
               <div className="card-inner flex flex-col justify-between h-full" style={{ minHeight: "180px" }}>
                 <div>
                   <div className="flex justify-between items-start mb-4">
-                    <h3 className="card-title">Izin & Keterangan</h3>
-                    <ClipboardList size={24} style={{ color: "var(--color-accent)", flexShrink: 0 }} />
+                    <h3 className="card-title">Kalender Bersama</h3>
+                    <Calendar size={24} style={{ color: "var(--color-accent)", flexShrink: 0 }} />
                   </div>
                   <p className="card-subtitle mb-4">
-                    Tidak absen masuk/pulang, datang terlambat, cuti tahunan, atau izin lainnya.
+                    Lihat jadwal cuti, sakit, dan izin karyawan lain secara real-time untuk koordinasi kerja.
                   </p>
                 </div>
-                <a href="/izin/new" className="btn btn-accent w-full">
-                  Ajukan Izin
+                <a href="/kalender" className="btn btn-accent w-full">
+                  Buka Kalender
                   <span className="btn-icon-circle">
                     <ArrowRight size={14} />
                   </span>
@@ -286,31 +279,21 @@ export default async function DashboardPage() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {recentActivities.map((act) => {
-                    const isLeave = act.category === "LEAVE";
-                    const title = isLeave
-                      ? getLeaveTypeLabel((act as any).leaveType)
-                      : getExcuseTypeLabel((act as any).excuseType);
-                    const range = isLeave
-                      ? `${formatDate((act as any).startDate)} s/d ${formatDate((act as any).endDate)}`
-                      : (act as any).dateFrom.getTime() === (act as any).dateTo.getTime()
-                        ? formatDate((act as any).dateFrom)
-                        : `${formatDate((act as any).dateFrom)} s/d ${formatDate((act as any).dateTo)}`;
-
                     return (
                       <Link
                         key={act.id}
-                        href={isLeave ? `/cuti/${act.id}` : `/izin/${act.id}`}
+                        href={`/cuti/${act.id}`}
                         className="activity-row-link"
                       >
                         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                          <div className={`stat-icon ${isLeave ? "primary" : "accent"}`} style={{ width: 36, height: 36, borderRadius: "50%" }}>
-                            {isLeave ? <CalendarOff size={16} /> : <ClipboardList size={16} />}
+                          <div className="stat-icon primary" style={{ width: 36, height: 36, borderRadius: "50%" }}>
+                            <CalendarOff size={16} />
                           </div>
                           <div style={{ display: "flex", flexDirection: "column" }}>
                             <span style={{ fontWeight: 600 }}>
-                              {isAdmin ? `${act.user.name} — ` : ""}{title}
+                              {isAdmin ? `${act.userName} — ` : ""}{act.title}
                             </span>
-                            <span className="text-xs text-muted">Tanggal: {range}</span>
+                            <span className="text-xs text-muted">Tanggal: {act.range}</span>
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -418,7 +401,7 @@ export default async function DashboardPage() {
                         ></div>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", marginTop: 4, color: "var(--color-text-muted)" }}>
-                        <span>Terpakai: {usedCuti} hari</span>
+                        <span>Terpakai: {usedCuti} hari {cutiBersamaCount > 0 && `(+ ${cutiBersamaCount} Cuti Bersama)`}</span>
                         <span>Sisa: {remainingCuti} / {accruedCuti} Hari (Maks: {activeQuota.totalDays} Hari)</span>
                       </div>
                     </div>

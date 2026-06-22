@@ -71,6 +71,7 @@ export default async function SettingsPage() {
           id: h.id,
           date: h.date.toISOString(),
           description: h.description,
+          isCutiBersama: h.isCutiBersama,
         }))}
         adminUsers={adminUsers.map((user) => ({
           id: user.id,

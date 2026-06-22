@@ -4,10 +4,10 @@ import { useState } from "react";
 import { Download, Calendar } from "lucide-react";
 
 interface ExportCsvPanelProps {
-  type: "cuti" | "izin";
+  type?: "cuti";
 }
 
-export function ExportCsvPanel({ type }: ExportCsvPanelProps) {
+export function ExportCsvPanel({ type = "cuti" }: ExportCsvPanelProps) {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,17 +20,12 @@ export function ExportCsvPanel({ type }: ExportCsvPanelProps) {
     if (start) query.set("start", start);
     if (end) query.set("end", end);
 
-    // Trigger the file download by setting window.location.href
-    // Since the endpoint responds with attachment disposition, it will trigger native download
-    window.location.href = `/api/reports/${type}?${query.toString()}`;
+    window.location.href = `/api/reports/cuti?${query.toString()}`;
 
-    // Reset loading state after a brief moment since browser handles download in the background
     setTimeout(() => {
       setLoading(false);
     }, 1000);
   };
-
-  const isIzin = type === "izin";
 
   return (
     <div
@@ -44,10 +39,10 @@ export function ExportCsvPanel({ type }: ExportCsvPanelProps) {
         <div className="flex items-center gap-2 mb-3">
           <Download
             size={16}
-            style={{ color: isIzin ? "var(--color-accent)" : "var(--color-primary)" }}
+            style={{ color: "var(--color-primary)" }}
           />
           <h4 style={{ fontSize: "var(--text-sm)", fontWeight: 700, margin: 0 }}>
-            Ekspor Laporan CSV {isIzin ? "(Izin & Keterangan)" : "(Cuti Khusus & Sakit)"}
+            Ekspor Laporan CSV (Cuti & Izin Karyawan)
           </h4>
         </div>
 
@@ -113,7 +108,7 @@ export function ExportCsvPanel({ type }: ExportCsvPanelProps) {
           <button
             type="submit"
             disabled={loading}
-            className={`btn ${isIzin ? "btn-accent" : "btn-primary"}`}
+            className="btn btn-primary"
             style={{
               minHeight: 38,
               padding: "0 20px",

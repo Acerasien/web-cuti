@@ -31,6 +31,22 @@ function getRoleLabel(role: string): string {
   return map[role] ?? role;
 }
 
+function getLeaveTypeLabel(type: string): string {
+  const map: Record<string, string> = {
+    PERNIKAHAN_KARYAWAN: "Pernikahan Karyawan",
+    PERNIKAHAN_ANAK: "Pernikahan Anak",
+    KHITAN_BAPTIS: "Khitan/Baptis Anak",
+    ISTRI_MELAHIRKAN: "Istri Melahirkan",
+    KEMATIAN_KELUARGA: "Cuti Duka Cita",
+    KARYAWATI_MELAHIRKAN: "Melahirkan (Karyawati)",
+    KARYAWATI_KEGUGURAN: "Keguguran (Karyawati)",
+    SAKIT: "Sakit dengan Surat Dokter",
+    CUTI_TAHUNAN: "Cuti Tahunan",
+    IZIN_LAINNYA: "Izin Lainnya",
+  };
+  return map[type] ?? type.replace(/_/g, " ");
+}
+
 export default async function KaryawanDetailPage({ params, searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
 
@@ -58,11 +74,10 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
       },
       leaveRequests: {
         orderBy: { createdAt: "desc" },
-        take: 10,
-      },
-      excuseRequests: {
-        orderBy: { createdAt: "desc" },
-        take: 10,
+        include: {
+          segments: true,
+        },
+        take: 15,
       },
       subCompany: {
         select: {
@@ -129,27 +144,63 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
 
   const now = new Date();
 
+  // Fetch Cuti Bersama holidays once to avoid N+1 query issue
+  const cutiBersamaHolidays = await prisma.holiday.findMany({
+    where: { isCutiBersama: true },
+    select: { date: true },
+  });
+
   // Quotas calculations
   const quotaHistory = employee.annualQuotas.map((quota) => {
-    // Sum approved cuti tahunan for this cycle
-    const cycleApproved = employee.excuseRequests
-      .filter((r) => r.excuseType === "CUTI_TAHUNAN" && r.annualQuotaId === quota.id && r.status === "APPROVED")
-      .reduce((sum, r) => sum + Number(r.totalDays || 0), 0);
+    // Sum approved cuti tahunan segments for this cycle
+    const cycleApproved = employee.leaveRequests
+      .filter((r) => r.status === "APPROVED")
+      .flatMap((r) => r.segments)
+      .filter((seg) => seg.leaveType === "CUTI_TAHUNAN" && seg.annualQuotaId === quota.id)
+      .reduce((sum, seg) => sum + Number(seg.totalDays || 0), 0);
+
+    const cycleCutiBersama = cutiBersamaHolidays.filter(
+      (h) => h.date >= quota.cycleStart && h.date <= now
+    ).length;
 
     const accrued = getAccruedQuotaDays(quota.cycleStart, quota.totalDays, now);
-    const remaining = Math.max(0, accrued - cycleApproved);
+    const remaining = Math.max(0, accrued - cycleApproved - cycleCutiBersama);
     const isExpired = quota.cycleEnd < now;
 
     return {
       ...quota,
       accrued,
       used: cycleApproved,
+      cutiBersama: cycleCutiBersama,
       remaining,
       isExpired,
     };
   });
 
   const activeQuota = quotaHistory.find((q) => q.cycleStart <= now && q.cycleEnd >= now) || quotaHistory[0];
+
+  const requestHistory = employee.leaveRequests.map((req) => {
+    const startDates = req.segments.map((s) => new Date(s.startDate).getTime());
+    const endDates = req.segments.map((s) => new Date(s.endDate).getTime());
+    const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : null;
+    const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : null;
+    const totalDays = req.segments.reduce((sum, s) => sum + Number(s.totalDays || 0), 0);
+
+    const typeLabels = Array.from(new Set(req.segments.map((s) => s.leaveType)))
+      .map((t) => getLeaveTypeLabel(t))
+      .join(", ");
+
+    const dateRangeStr = earliestStart && latestEnd
+      ? `${earliestStart.toLocaleDateString("id-ID", { day: "numeric", month: "short" })} s/d ${latestEnd.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`
+      : "—";
+
+    return {
+      ...req,
+      typeLabels,
+      dateRangeStr,
+      totalDays,
+    };
+  });
 
   return (
     <PageWrapper title="Profil Karyawan">
@@ -230,63 +281,29 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
             {/* Request History */}
             <div className="card-outer">
               <div className="card-inner">
-                <h3 className="card-title mb-4">Pengajuan Cuti Khusus & Sakit Terbaru</h3>
-                {employee.leaveRequests.length === 0 ? (
-                  <p className="text-muted text-sm">Belum ada riwayat pengajuan cuti khusus.</p>
+                <h3 className="card-title mb-4">Riwayat Pengajuan Cuti & Izin Terbaru</h3>
+                {requestHistory.length === 0 ? (
+                  <p className="text-muted text-sm">Belum ada riwayat pengajuan cuti atau izin.</p>
                 ) : (
                   <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
                     <table className="table" style={{ fontSize: "var(--text-xs)" }}>
                       <thead>
                         <tr>
-                          <th>Jenis Cuti</th>
-                          <th>Tanggal</th>
-                          <th>Durasi</th>
+                          <th>Jenis Pengajuan</th>
+                          <th>Tanggal Periode</th>
+                          <th>Durasi Kerja</th>
                           <th>Status</th>
                           <th>Detail</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {employee.leaveRequests.map((req) => (
+                        {requestHistory.map((req) => (
                           <tr key={req.id}>
-                            <td>{req.leaveType.replace(/_/g, " ")}</td>
-                            <td>{formatDate(req.startDate)}</td>
+                            <td style={{ fontWeight: 600 }}>{req.typeLabels}</td>
+                            <td>{req.dateRangeStr}</td>
                             <td>{req.totalDays} Hari</td>
                             <td><span className={`badge badge-${req.status.toLowerCase()}`}>{req.status}</span></td>
                             <td><Link href={`/cuti/${req.id}`} className="text-primary font-semibold">Lihat</Link></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="card-outer">
-              <div className="card-inner">
-                <h3 className="card-title mb-4">Pengajuan Izin & Keterangan Terbaru</h3>
-                {employee.excuseRequests.length === 0 ? (
-                  <p className="text-muted text-sm">Belum ada riwayat pengajuan izin.</p>
-                ) : (
-                  <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
-                    <table className="table" style={{ fontSize: "var(--text-xs)" }}>
-                      <thead>
-                        <tr>
-                          <th>Jenis Izin</th>
-                          <th>Tanggal Kejadian</th>
-                          <th>Durasi</th>
-                          <th>Status</th>
-                          <th>Detail</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {employee.excuseRequests.map((req) => (
-                          <tr key={req.id}>
-                            <td>{req.excuseType.replace(/_/g, " ")}</td>
-                            <td>{formatDate(req.dateFrom)}</td>
-                            <td>{Number(req.totalDays || 0)} Hari</td>
-                            <td><span className={`badge badge-${req.status.toLowerCase()}`}>{req.status}</span></td>
-                            <td><Link href={`/izin/${req.id}`} className="text-primary font-semibold">Lihat</Link></td>
                           </tr>
                         ))}
                       </tbody>
@@ -323,6 +340,12 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
                         <p style={{ fontWeight: 700, fontSize: "var(--text-sm)", color: "var(--color-primary)" }}>{activeQuota.remaining} H</p>
                       </div>
                     </div>
+                    {activeQuota.cutiBersama > 0 && (
+                      <div className="text-[10px] text-muted flex justify-between" style={{ marginTop: 2, padding: "0 2px" }}>
+                        <span>Potongan Cuti Bersama:</span>
+                        <span className="font-semibold text-warning">{activeQuota.cutiBersama} Hari</span>
+                      </div>
+                    )}
                     <div className="divider" style={{ margin: "4px 0" }} />
                     <div style={{ fontSize: "11px", opacity: 0.8 }}>
                       Siklus Aktif:<br />

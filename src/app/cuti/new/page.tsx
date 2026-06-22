@@ -32,8 +32,8 @@ export default async function NewLeavePage() {
   const holidayDates = holidays.map((h) => h.date.toISOString().split("T")[0]);
 
   return (
-    <PageWrapper title="Ajukan Cuti Khusus / Sakit">
-      <div style={{ maxWidth: "680px", margin: "0 auto" }}>
+    <PageWrapper title="Buat Pengajuan Cuti & Izin">
+      <div style={{ maxWidth: "1024px", margin: "0 auto" }}>
         <LeaveForm
           currentUser={{
             id: session.user.id,

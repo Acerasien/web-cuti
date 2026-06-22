@@ -30,7 +30,7 @@ export default async function KaryawanListPage() {
     orderBy: { name: "asc" },
   });
 
-  // Fetch all users with their quotas, sub-company, and approved excuse requests
+  // Fetch all users with their quotas, sub-company, and approved leave segments
   const users = await prisma.user.findMany({
     where: { role: "KARYAWAN" },
     include: {
@@ -42,14 +42,20 @@ export default async function KaryawanListPage() {
       annualQuotas: {
         orderBy: { cycleStart: "desc" },
       },
-      excuseRequests: {
+      leaveRequests: {
         where: {
-          excuseType: "CUTI_TAHUNAN",
           status: "APPROVED",
         },
-        select: {
-          annualQuotaId: true,
-          totalDays: true,
+        include: {
+          segments: {
+            where: {
+              leaveType: "CUTI_TAHUNAN",
+            },
+            select: {
+              annualQuotaId: true,
+              totalDays: true,
+            },
+          },
         },
       },
     },
@@ -57,6 +63,12 @@ export default async function KaryawanListPage() {
   });
 
   const now = new Date();
+
+  // Fetch Cuti Bersama holidays once to avoid N+1 query issue
+  const cutiBersamaHolidays = await prisma.holiday.findMany({
+    where: { isCutiBersama: true },
+    select: { date: true },
+  });
 
   const employeeData = users.map((user) => {
     // Find active quota covering today, or fallback to latest
@@ -71,12 +83,17 @@ export default async function KaryawanListPage() {
     let balanceText = "—";
 
     if (activeQuota) {
-      const cycleApproved = user.excuseRequests
-        .filter((r) => r.annualQuotaId === activeQuota.id)
-        .reduce((sum, r) => sum + Number(r.totalDays || 0), 0);
+      const cycleApproved = user.leaveRequests
+        .flatMap((r) => r.segments)
+        .filter((seg) => seg.annualQuotaId === activeQuota.id)
+        .reduce((sum, seg) => sum + Number(seg.totalDays || 0), 0);
+
+      const cycleCutiBersama = cutiBersamaHolidays.filter(
+        (h) => h.date >= activeQuota.cycleStart && h.date <= now
+      ).length;
 
       const accrued = getAccruedQuotaDays(activeQuota.cycleStart, activeQuota.totalDays, now);
-      const remaining = Math.max(0, accrued - cycleApproved);
+      const remaining = Math.max(0, accrued - cycleApproved - cycleCutiBersama);
       quotaText = `${accrued} / ${activeQuota.totalDays} H`;
       balanceText = `${remaining} H`;
     }

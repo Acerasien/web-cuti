@@ -367,20 +367,34 @@ export async function getKaryawanRemainingQuota(userId: string) {
       return { quota: null };
     }
 
-    // Sum approved cuti tahunan
-    const approvedExcuses = await prisma.excuseRequest.aggregate({
+    // Sum approved cuti tahunan segments
+    const approvedSegments = await prisma.leaveSegment.aggregate({
       _sum: { totalDays: true },
       where: {
-        userId,
-        excuseType: "CUTI_TAHUNAN",
+        leaveRequest: {
+          userId,
+          status: "APPROVED",
+        },
+        leaveType: "CUTI_TAHUNAN",
         annualQuotaId: activeQuota.id,
-        status: "APPROVED",
       },
     });
 
-    const usedDays = Number(approvedExcuses._sum.totalDays || 0);
+    const usedDays = Number(approvedSegments._sum.totalDays || 0);
     const accruedDays = getAccruedQuotaDays(activeQuota.cycleStart, activeQuota.totalDays, now);
-    const remainingDays = accruedDays - usedDays;
+    
+    // Count Cuti Bersama days that have occurred during the active cycle
+    const cutiBersamaCount = await prisma.holiday.count({
+      where: {
+        isCutiBersama: true,
+        date: {
+          gte: activeQuota.cycleStart,
+          lte: now,
+        },
+      },
+    });
+
+    const remainingDays = Math.max(0, accruedDays - usedDays - cutiBersamaCount);
 
     return {
       quota: {
@@ -388,6 +402,7 @@ export async function getKaryawanRemainingQuota(userId: string) {
         total: activeQuota.totalDays,
         accrued: accruedDays,
         used: usedDays,
+        cutiBersama: cutiBersamaCount,
         remaining: remainingDays,
         cycleStart: activeQuota.cycleStart.toISOString(),
         cycleEnd: activeQuota.cycleEnd.toISOString(),
@@ -429,7 +444,6 @@ export async function deleteKaryawanUser(userId: string) {
     // Run cascade delete transaction
     await prisma.$transaction([
       prisma.leaveRequest.deleteMany({ where: { userId } }),
-      prisma.excuseRequest.deleteMany({ where: { userId } }),
       prisma.annualLeaveQuota.deleteMany({ where: { userId } }),
       prisma.user.delete({ where: { id: userId } }),
     ]);

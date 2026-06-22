@@ -43,6 +43,7 @@ interface HolidayData {
   id: string;
   date: string;
   description: string;
+  isCutiBersama?: boolean;
 }
 
 interface AdminUserData {
@@ -118,6 +119,7 @@ export function SettingsPageClient({
   // Holiday State
   const [newHolidayDate, setNewHolidayDate] = useState("");
   const [newHolidayDesc, setNewHolidayDesc] = useState("");
+  const [isCutiBersama, setIsCutiBersama] = useState(false);
   const [holidayError, setHolidayError] = useState("");
   const [holidaySuccess, setHolidaySuccess] = useState(false);
   const [deleteHolidayPendingId, setDeleteHolidayPendingId] = useState<string | null>(null);
@@ -322,6 +324,7 @@ export function SettingsPageClient({
       const formData = new FormData();
       formData.append("date", newHolidayDate);
       formData.append("description", newHolidayDesc);
+      formData.append("isCutiBersama", String(isCutiBersama));
 
       const res = await createHoliday(null, formData);
       if (res?.error) {
@@ -330,6 +333,7 @@ export function SettingsPageClient({
         setHolidaySuccess(true);
         setNewHolidayDate("");
         setNewHolidayDesc("");
+        setIsCutiBersama(false);
         router.refresh();
         setTimeout(() => setHolidaySuccess(false), 3000);
       }
@@ -749,171 +753,321 @@ export function SettingsPageClient({
       )}
 
       {activeTab === "HOLIDAY" && (
-        <div className="card-outer" style={{ width: "100%", maxWidth: "800px" }}>
-          <div className="card-inner">
-            <div className="flex items-center gap-2 mb-6">
-              <Calendar size={20} className="text-primary" />
-              <h3 className="card-title" style={{ margin: 0 }}>
-                Daftar Hari Libur Nasional & Perusahaan
-              </h3>
+        <div className="flex flex-col gap-4" style={{ width: "100%" }}>
+          <style>{`
+            .holiday-grid-layout {
+              display: grid;
+              grid-template-columns: 1fr 1.7fr;
+              gap: 24px;
+              align-items: start;
+            }
+            @media (max-width: 820px) {
+              .holiday-grid-layout {
+                grid-template-columns: 1fr;
+              }
+            }
+            .date-badge {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              background: var(--color-bg);
+              border: 1px solid var(--color-border);
+              border-radius: var(--radius-md);
+              width: 48px;
+              height: 48px;
+              flex-shrink: 0;
+            }
+            .holiday-row:hover {
+              background-color: rgba(124, 58, 237, 0.02);
+            }
+          `}</style>
+          
+          <div className="holiday-grid-layout">
+            {/* Column 1: Add Form */}
+            <div className="card-outer">
+              <div className="card-inner" style={{ padding: "20px" }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <Calendar size={18} className="text-primary" />
+                  <h3 className="card-title text-base" style={{ margin: 0 }}>
+                    Tambah Hari Libur
+                  </h3>
+                </div>
+
+                {holidayError && (
+                  <div
+                    className="form-error mb-4"
+                    style={{
+                      padding: "8px 12px",
+                      background: "var(--color-danger-light)",
+                      color: "var(--color-danger)",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid rgba(220,38,38,0.15)",
+                      fontSize: "11px",
+                    }}
+                  >
+                    {holidayError}
+                  </div>
+                )}
+
+                {holidaySuccess && (
+                  <div
+                    className="mb-4"
+                    style={{
+                      padding: "8px 12px",
+                      background: "var(--color-success-light)",
+                      color: "var(--color-success)",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid rgba(22,163,74,0.15)",
+                      fontSize: "11px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Hari libur berhasil ditambahkan!
+                  </div>
+                )}
+
+                <form onSubmit={handleAddHoliday} className="flex flex-col gap-4">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="holidayDate" className="form-label required text-xs">
+                      Tanggal Libur
+                    </label>
+                    <input
+                      id="holidayDate"
+                      type="date"
+                      className="form-input w-full"
+                      style={{ minHeight: 40, fontSize: "13px" }}
+                      value={newHolidayDate}
+                      onChange={(e) => setNewHolidayDate(e.target.value)}
+                      disabled={isPending}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="holidayDesc" className="form-label required text-xs">
+                      Deskripsi Libur
+                    </label>
+                    <input
+                      id="holidayDesc"
+                      type="text"
+                      className="form-input w-full"
+                      placeholder="Contoh: Hari Kemerdekaan RI"
+                      style={{ minHeight: 40, fontSize: "13px" }}
+                      value={newHolidayDesc}
+                      onChange={(e) => setNewHolidayDesc(e.target.value)}
+                      disabled={isPending}
+                    />
+                  </div>
+
+                  {/* Checkbox for Cuti Bersama */}
+                  <div 
+                    style={{ 
+                      display: "flex", 
+                      alignItems: "flex-start", 
+                      gap: "12px", 
+                      padding: "14px", 
+                      borderRadius: "var(--radius-md)", 
+                      border: "1.5px solid var(--color-border)", 
+                      backgroundColor: "#F8FAFC",
+                      marginTop: "4px",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    <input
+                      id="isCutiBersama"
+                      type="checkbox"
+                      checked={isCutiBersama}
+                      onChange={(e) => setIsCutiBersama(e.target.checked)}
+                      disabled={isPending}
+                      style={{ 
+                        width: "16px", 
+                        height: "16px", 
+                        marginTop: "3px", 
+                        cursor: "pointer",
+                        accentColor: "var(--color-primary)",
+                      }}
+                    />
+                    <label 
+                      htmlFor="isCutiBersama" 
+                      style={{ 
+                        cursor: "pointer", 
+                        display: "flex", 
+                        flexDirection: "column", 
+                        gap: "4px",
+                        fontFamily: "var(--font-body)",
+                        userSelect: "none",
+                      }}
+                    >
+                      <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text)", lineHeight: 1.2 }}>
+                        Cuti Bersama (Potong Cuti)
+                      </span>
+                      <span style={{ fontSize: "11px", fontWeight: 500, color: "var(--color-text-muted)", lineHeight: 1.4 }}>
+                        Hari libur ini akan memotong jatah kuota cuti tahunan semua karyawan secara otomatis.
+                      </span>
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isPending}
+                    className="btn btn-primary w-full mt-2"
+                    style={{ minHeight: 40, gap: 6, fontSize: "13px" }}
+                  >
+                    {isPending && newHolidayDate && newHolidayDesc ? (
+                      <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
+                    ) : (
+                      <>
+                        <Plus size={16} /> Tambah Hari Libur
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
             </div>
 
-            {holidayError && (
-              <div
-                className="form-error mb-4"
-                style={{
-                  padding: "var(--space-2) var(--space-3)",
-                  background: "var(--color-danger-light)",
-                  color: "var(--color-danger)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid rgba(220,38,38,0.2)",
-                  fontSize: "var(--text-xs)",
-                }}
-              >
-                {holidayError}
-              </div>
-            )}
+            {/* Column 2: List of Holidays */}
+            <div className="card-outer flex-1">
+              <div className="card-inner" style={{ padding: "20px" }}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="card-title text-base" style={{ margin: 0 }}>
+                    Daftar Hari Libur Nasional & Perusahaan
+                  </h3>
+                  <span className="badge badge-primary" style={{ fontSize: "10px" }}>
+                    {holidays.length} Hari Terdaftar
+                  </span>
+                </div>
 
-            {holidaySuccess && (
-              <div
-                className="mb-4"
-                style={{
-                  padding: "var(--space-2) var(--space-3)",
-                  background: "var(--color-success-light)",
-                  color: "var(--color-success)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid rgba(22,163,74,0.2)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 500,
-                }}
-              >
-                Hari libur berhasil ditambahkan!
-              </div>
-            )}
-
-            {/* Inline Add Form */}
-            <form onSubmit={handleAddHoliday} className="flex gap-4 flex-wrap items-end mb-6">
-              <div className="form-group flex-1 min-w-[200px]" style={{ marginBottom: 0 }}>
-                <label htmlFor="holidayDate" className="form-label required" style={{ fontSize: "var(--text-xs)" }}>
-                  Tanggal Libur
-                </label>
-                <input
-                  id="holidayDate"
-                  type="date"
-                  className="form-input w-full"
-                  style={{ minHeight: 40 }}
-                  value={newHolidayDate}
-                  onChange={(e) => setNewHolidayDate(e.target.value)}
-                  disabled={isPending}
-                />
-              </div>
-
-              <div className="form-group flex-2 min-w-[300px]" style={{ marginBottom: 0, flexGrow: 2 }}>
-                <label htmlFor="holidayDesc" className="form-label required" style={{ fontSize: "var(--text-xs)" }}>
-                  Deskripsi Libur
-                </label>
-                <input
-                  id="holidayDesc"
-                  type="text"
-                  className="form-input w-full"
-                  placeholder="Contoh: Hari Kemerdekaan RI"
-                  style={{ minHeight: 40 }}
-                  value={newHolidayDesc}
-                  onChange={(e) => setNewHolidayDesc(e.target.value)}
-                  disabled={isPending}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isPending}
-                className="btn btn-primary"
-                style={{ minHeight: 40, padding: "0 20px", gap: 6 }}
-              >
-                {isPending && newHolidayDate && newHolidayDesc ? (
-                  <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
-                ) : (
-                  <>
-                    <Plus size={16} /> Tambah Libur
-                  </>
-                )}
-              </button>
-            </form>
-
-            {/* Holiday List Grid/Table */}
-            <div
-              style={{
-                maxHeight: 400,
-                overflowY: "auto",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-              }}
-            >
-              {holidays.length === 0 ? (
                 <div
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: "32px 0",
-                    color: "var(--color-text-light)",
-                    fontSize: "var(--text-xs)",
+                    maxHeight: "440px",
+                    overflowY: "auto",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-md)",
                   }}
                 >
-                  <Calendar size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
-                  Belum ada hari libur terdaftar.
-                </div>
-              ) : (
-                <table className="table" style={{ fontSize: "var(--text-xs)", margin: 0 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: "25%" }}>Tanggal</th>
-                      <th style={{ width: "60%" }}>Deskripsi</th>
-                      <th style={{ width: "15%", textAlign: "center" }}>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {holidays.map((h) => {
-                      const formattedDate = new Date(h.date).toLocaleDateString("id-ID", {
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      });
-                      return (
-                        <tr key={h.id}>
-                          <td style={{ fontWeight: 600 }}>{formattedDate}</td>
-                          <td>{h.description}</td>
-                          <td style={{ textAlign: "center" }}>
-                            <button
-                              type="button"
-                              disabled={isPending || deleteHolidayPendingId !== null}
-                              onClick={() => handleDeleteHoliday(h.id, h.date)}
-                              className="btn btn-ghost btn-sm"
-                              style={{
-                                color: "var(--color-danger)",
-                                padding: 6,
-                                minHeight: 30,
-                                width: 30,
-                                borderRadius: "50%",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              {deleteHolidayPendingId === h.id ? (
-                                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-                              ) : (
-                                <Trash2 size={14} />
-                              )}
-                            </button>
-                          </td>
+                  {holidays.length === 0 ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "48px 0",
+                        color: "var(--color-text-light)",
+                        fontSize: "var(--text-xs)",
+                      }}
+                    >
+                      <Calendar size={28} style={{ marginBottom: 8, opacity: 0.4 }} className="text-muted" />
+                      <span>Belum ada hari libur terdaftar.</span>
+                    </div>
+                  ) : (
+                    <table className="table" style={{ fontSize: "var(--text-xs)", margin: 0 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ width: "40%" }}>Tanggal</th>
+                          <th style={{ width: "45%" }}>Deskripsi / Tipe</th>
+                          <th style={{ width: "15%", textAlign: "center" }}>Aksi</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+                      </thead>
+                      <tbody>
+                        {holidays.map((h) => {
+                          const dateObj = new Date(h.date);
+                          const monthStr = dateObj.toLocaleString("id-ID", { month: "short" });
+                          const dayNum = dateObj.getDate();
+                          const yearNum = dateObj.getFullYear();
+                          const weekdayStr = dateObj.toLocaleString("id-ID", { weekday: "long" });
+
+                          return (
+                            <tr key={h.id} className="holiday-row">
+                              <td>
+                                <div className="flex items-center gap-3">
+                                  <div className="date-badge">
+                                    <span className="text-[9px] font-extrabold text-primary uppercase leading-none">
+                                      {monthStr}
+                                    </span>
+                                    <span className="text-[16px] font-extrabold text-slate-700 leading-none mt-1">
+                                      {dayNum}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[10px] text-slate-400 font-semibold leading-none">{yearNum}</span>
+                                    <span className="text-xs font-semibold text-slate-600 leading-none">{weekdayStr}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td style={{ verticalAlign: "middle" }}>
+                                <div className="flex flex-col gap-1.5 items-start">
+                                  <span style={{ fontWeight: 600, fontSize: "12px", color: "var(--color-text)" }}>
+                                    {h.description}
+                                  </span>
+                                  {h.isCutiBersama ? (
+                                    <span
+                                      className="badge"
+                                      style={{
+                                        fontSize: "9px",
+                                        padding: "1px 6px",
+                                        background: "var(--color-warning-light)",
+                                        color: "var(--color-warning)",
+                                        border: "1px solid rgba(249,115,22,0.15)",
+                                      }}
+                                    >
+                                      Cuti Bersama (Potong Kuota)
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="badge"
+                                      style={{
+                                        fontSize: "9px",
+                                        padding: "1px 6px",
+                                        background: "var(--color-primary-light)",
+                                        color: "var(--color-primary)",
+                                        border: "1px solid rgba(59,130,246,0.15)",
+                                      }}
+                                    >
+                                      Libur Nasional
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: "center", verticalAlign: "middle" }}>
+                                <button
+                                  type="button"
+                                  disabled={isPending || deleteHolidayPendingId !== null}
+                                  onClick={() => handleDeleteHoliday(h.id, h.date)}
+                                  className="btn btn-ghost btn-sm"
+                                  style={{
+                                    color: "var(--color-danger)",
+                                    padding: 6,
+                                    minHeight: 30,
+                                    width: 30,
+                                    borderRadius: "50%",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    transition: "all var(--transition-fast)",
+                                  }}
+                                  onMouseOver={(e) => {
+                                    (e.currentTarget as any).style.backgroundColor = "var(--color-danger-light)";
+                                  }}
+                                  onMouseOut={(e) => {
+                                    (e.currentTarget as any).style.backgroundColor = "transparent";
+                                  }}
+                                >
+                                  {deleteHolidayPendingId === h.id ? (
+                                    <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                                  ) : (
+                                    <Trash2 size={14} />
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>

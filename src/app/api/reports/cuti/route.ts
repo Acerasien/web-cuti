@@ -30,38 +30,43 @@ export async function GET(request: NextRequest) {
   if (end) {
     const endDate = new Date(end);
     if (!isNaN(endDate.getTime())) {
-      // Set to end of the day to capture leaves ending on this date
       endDate.setHours(23, 59, 59, 999);
       where.endDate = { lte: endDate };
     }
   }
 
-  const leaves = await prisma.leaveRequest.findMany({
+  const segments = await prisma.leaveSegment.findMany({
     where,
     include: {
-      user: {
-        select: {
-          name: true,
-          email: true,
-          department: true,
+      leaveRequest: {
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+              department: true,
+            },
+          },
         },
       },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { startDate: "desc" },
   });
 
   const getLeaveTypeLabel = (type: string): string => {
     const map: Record<string, string> = {
       PERNIKAHAN_KARYAWAN: "Pernikahan Karyawan",
-      PERNIKAHAN_ANAK: "Pernikahan Anak Kandung",
-      KHITAN_BAPTIS: "Khitan / Baptis Anak Kandung",
-      ISTRI_MELAHIRKAN: "Istri Melahirkan / Keguguran",
-      KEMATIAN_KELUARGA: "Kematian Keluarga",
-      KARYAWATI_MELAHIRKAN: "Karyawati Melahirkan",
-      KARYAWATI_KEGUGURAN: "Karyawati Keguguran",
+      PERNIKAHAN_ANAK: "Pernikahan Anak",
+      KHITAN_BAPTIS: "Khitan/Baptis Anak",
+      ISTRI_MELAHIRKAN: "Istri Melahirkan",
+      KEMATIAN_KELUARGA: "Cuti Duka Cita",
+      KARYAWATI_MELAHIRKAN: "Melahirkan (Karyawati)",
+      KARYAWATI_KEGUGURAN: "Keguguran (Karyawati)",
       SAKIT: "Sakit (Surat Dokter)",
+      CUTI_TAHUNAN: "Cuti Tahunan",
+      IZIN_LAINNYA: "Izin Lainnya",
     };
-    return map[type] ?? type;
+    return map[type] ?? type.replace(/_/g, " ");
   };
 
   const escapeCsv = (str: string | null | undefined) => {
@@ -75,38 +80,38 @@ export async function GET(request: NextRequest) {
     "Nama Karyawan",
     "Email",
     "Departemen",
-    "Jenis Cuti",
+    "Jenis Cuti/Izin",
     "Tanggal Mulai",
     "Tanggal Selesai",
     "Total Hari",
-    "Status",
+    "Status Approval",
     "Alasan",
     "Tanggal Pengajuan",
   ];
 
-  const rows = leaves.map((leave) => [
-    leave.id,
-    leave.user.name,
-    leave.user.email,
-    leave.user.department || "-",
-    getLeaveTypeLabel(leave.leaveType),
-    leave.startDate.toISOString().substring(0, 10),
-    leave.endDate.toISOString().substring(0, 10),
-    leave.totalDays,
-    leave.status,
-    leave.reason,
-    leave.createdAt.toISOString().substring(0, 10),
+  const rows = segments.map((seg) => [
+    seg.leaveRequest.id,
+    seg.leaveRequest.user.name,
+    seg.leaveRequest.user.email,
+    seg.leaveRequest.user.department || "-",
+    getLeaveTypeLabel(seg.leaveType),
+    seg.startDate.toISOString().substring(0, 10),
+    seg.endDate.toISOString().substring(0, 10),
+    Number(seg.totalDays),
+    seg.leaveRequest.status,
+    seg.leaveRequest.reason,
+    seg.leaveRequest.createdAt.toISOString().substring(0, 10),
   ]);
 
   const csvContent =
-    "\ufeff" + // UTF-8 BOM for Excel Excel compatibility
+    "\ufeff" + // UTF-8 BOM for Excel compatibility
     [headers.join(","), ...rows.map((row) => row.map((val) => escapeCsv(String(val))).join(","))].join("\n");
 
   const response = new NextResponse(csvContent);
   response.headers.set("Content-Type", "text/csv; charset=utf-8");
   response.headers.set(
     "Content-Disposition",
-    `attachment; filename="laporan_cuti_${new Date().toISOString().substring(0, 10)}.csv"`
+    `attachment; filename="laporan_cuti_izin_${new Date().toISOString().substring(0, 10)}.csv"`
   );
 
   return response;

@@ -129,6 +129,7 @@ export async function createHoliday(prevState: any, formData: FormData) {
 
     const dateInput = formData.get("date") as string;
     const description = formData.get("description") as string;
+    const isCutiBersama = formData.get("isCutiBersama") === "true";
 
     if (!dateInput || !description || !description.trim()) {
       return { error: "Tanggal dan Deskripsi wajib diisi." };
@@ -152,6 +153,7 @@ export async function createHoliday(prevState: any, formData: FormData) {
       data: {
         date,
         description: description.trim(),
+        isCutiBersama,
       },
     });
 

@@ -33,15 +33,18 @@ export default async function QuotaManagementPage() {
     include: {
       annualQuotas: {
         orderBy: { cycleStart: "desc" },
-      },
-      excuseRequests: {
-        where: {
-          excuseType: "CUTI_TAHUNAN",
-          status: "APPROVED",
-        },
-        select: {
-          annualQuotaId: true,
-          totalDays: true,
+        include: {
+          segments: {
+            where: {
+              leaveType: "CUTI_TAHUNAN",
+              leaveRequest: {
+                status: "APPROVED",
+              },
+            },
+            select: {
+              totalDays: true,
+            },
+          },
         },
       },
     },
@@ -49,6 +52,12 @@ export default async function QuotaManagementPage() {
   });
 
   const now = new Date();
+
+  // Fetch Cuti Bersama holidays once to avoid N+1 query issue
+  const cutiBersamaHolidays = await prisma.holiday.findMany({
+    where: { isCutiBersama: true },
+    select: { date: true },
+  });
 
   const employees = users.map((user) => {
     // Find active quota cycle covering today, or fallback to the latest one
@@ -67,11 +76,14 @@ export default async function QuotaManagementPage() {
     let daysToExpiry = null;
 
     if (activeQuota) {
-      usedDays = user.excuseRequests
-        .filter((r) => r.annualQuotaId === activeQuota.id)
-        .reduce((sum, r) => sum + Number(r.totalDays || 0), 0);
+      usedDays = activeQuota.segments.reduce((sum, r) => sum + Number(r.totalDays || 0), 0);
       accruedDays = getAccruedQuotaDays(activeQuota.cycleStart, activeQuota.totalDays, now);
-      remainingDays = Math.max(0, accruedDays - usedDays);
+      
+      const cycleCutiBersama = cutiBersamaHolidays.filter(
+        (h) => h.date >= activeQuota.cycleStart && h.date <= now
+      ).length;
+
+      remainingDays = Math.max(0, accruedDays - usedDays - cycleCutiBersama);
 
       const timeDiff = activeQuota.cycleEnd.getTime() - now.getTime();
       daysToExpiry = Math.ceil(timeDiff / (1000 * 3600 * 24));

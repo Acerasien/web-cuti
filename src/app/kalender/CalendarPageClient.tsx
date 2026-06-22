@@ -637,7 +637,7 @@ export function CalendarPageClient({
             <div className="modal-footer" style={{ borderTop: "1px solid var(--color-border)", padding: "12px var(--space-6)" }}>
               {isAdmin && selectedEvent.category !== "HOLIDAY" && (
                 <a
-                  href={selectedEvent.category === "LEAVE" ? `/cuti/${selectedEvent.id}` : `/izin/${selectedEvent.id}`}
+                  href={`/cuti/${selectedEvent.id}`}
                   className="btn btn-outline btn-sm"
                   style={{ marginRight: "auto" }}
                 >
