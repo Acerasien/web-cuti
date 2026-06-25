@@ -55,9 +55,11 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
   const [loadingSignatories, setLoadingSignatories] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [diketahuiList, setDiketahuiList] = useState<SignatoryUser[]>([]);
   const [disetujuiList, setDisetujuiList] = useState<SignatoryUser[]>([]);
   const [diterimaList, setDiterimaList] = useState<SignatoryUser[]>([]);
 
+  const [selectedDiketahuiId, setSelectedDiketahuiId] = useState("");
   const [selectedDisetujuiId, setSelectedDisetujuiId] = useState("");
   const [selectedDiterimaId, setSelectedDiterimaId] = useState("");
 
@@ -76,8 +78,17 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
       const res = await fetch(`/api/employees/signatories?userId=${userId}`);
       if (!res.ok) throw new Error("Gagal mengambil data penandatangan");
       const data = await res.json();
+      setDiketahuiList(data.diketahuiOleh || []);
       setDisetujuiList(data.disetujuiOleh || []);
       setDiterimaList(data.diterimaOleh || []);
+
+      // Auto-select supervisor matching direct supervisor name or fallback to first candidate
+      const defaultSupervisor = data.diketahuiOleh?.find((u: SignatoryUser) => u.name === leave.user.namaAtasan);
+      if (defaultSupervisor) {
+        setSelectedDiketahuiId(defaultSupervisor.id);
+      } else if (data.diketahuiOleh?.length > 0) {
+        setSelectedDiketahuiId(data.diketahuiOleh[0].id);
+      }
 
       // Auto-select first item if available
       if (data.disetujuiOleh?.length > 0) {
@@ -107,15 +118,18 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
 
   // Generate preview when options change
   useEffect(() => {
-    if (!isOpen || !selectedDisetujuiId || !selectedDiterimaId || loadingSignatories) return;
+    if (!isOpen || !selectedDiketahuiId || !selectedDisetujuiId || !selectedDiterimaId || loadingSignatories) return;
 
     let active = true;
     const generatePreview = async () => {
       setRenderingPreview(true);
       try {
+        const selectedDiketahui = diketahuiList.find((u) => u.id === selectedDiketahuiId);
         const selectedDisetujui = disetujuiList.find((u) => u.id === selectedDisetujuiId);
         const selectedDiterima = diterimaList.find((u) => u.id === selectedDiterimaId);
 
+        const diketahuiName = selectedDiketahui?.name || "—";
+        const diketahuiPosition = selectedDiketahui?.position || "—";
         const disetujuiName = selectedDisetujui?.name || "—";
         const disetujuiPosition = selectedDisetujui?.position || "—";
         const diterimaName = selectedDiterima?.name || "—";
@@ -130,6 +144,8 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
         const doc = (
           <LeavePdfTemplate
             leave={leave}
+            diketahuiName={diketahuiName}
+            diketahuiPosition={diketahuiPosition}
             disetujuiName={disetujuiName}
             disetujuiPosition={disetujuiPosition}
             diterimaName={diterimaName}
@@ -161,10 +177,10 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
       active = false;
       clearTimeout(timer);
     };
-  }, [isOpen, selectedDisetujuiId, selectedDiterimaId, loadingSignatories, disetujuiList, diterimaList, leave]);
+  }, [isOpen, selectedDiketahuiId, selectedDisetujuiId, selectedDiterimaId, loadingSignatories, diketahuiList, disetujuiList, diterimaList, leave]);
 
   const handleGeneratePdf = async () => {
-    if (!selectedDisetujuiId || !selectedDiterimaId) {
+    if (!selectedDiketahuiId || !selectedDisetujuiId || !selectedDiterimaId) {
       setError("Silakan pilih penandatangan yang valid");
       return;
     }
@@ -173,9 +189,12 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
     setError(null);
 
     try {
+      const selectedDiketahui = diketahuiList.find((u) => u.id === selectedDiketahuiId);
       const selectedDisetujui = disetujuiList.find((u) => u.id === selectedDisetujuiId);
       const selectedDiterima = diterimaList.find((u) => u.id === selectedDiterimaId);
 
+      const diketahuiName = selectedDiketahui?.name || "—";
+      const diketahuiPosition = selectedDiketahui?.position || "—";
       const disetujuiName = selectedDisetujui?.name || "—";
       const disetujuiPosition = selectedDisetujui?.position || "—";
       const diterimaName = selectedDiterima?.name || "—";
@@ -190,6 +209,8 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
       const doc = (
         <LeavePdfTemplate
           leave={leave}
+          diketahuiName={diketahuiName}
+          diketahuiPosition={diketahuiPosition}
           disetujuiName={disetujuiName}
           disetujuiPosition={disetujuiPosition}
           diterimaName={diterimaName}
@@ -355,6 +376,37 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-4">
+                      {/* Select Diketahui Oleh */}
+                      <div className="form-group" style={{ marginBottom: "var(--space-3)" }}>
+                        <label
+                          htmlFor="diketahuiSelect"
+                          className="form-label required"
+                          style={{ fontSize: "var(--text-xs)", fontWeight: 600 }}
+                        >
+                          Diketahui Oleh (Atasan Langsung / Setingkat)
+                        </label>
+                        {diketahuiList.length === 0 ? (
+                          <div className="text-xs text-muted p-2 bg-slate-50 border rounded">
+                            Tidak ada kandidat penandatangan di tingkat ini.
+                          </div>
+                        ) : (
+                          <select
+                            id="diketahuiSelect"
+                            className="form-select w-full"
+                            value={selectedDiketahuiId}
+                            onChange={(e) => setSelectedDiketahuiId(e.target.value)}
+                            disabled={generating}
+                            style={{ fontSize: "var(--text-sm)" }}
+                          >
+                            {diketahuiList.map((user) => (
+                              <option key={user.id} value={user.id}>
+                                {user.name} ({user.level || "Supervisor"})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
                       {/* Select Disetujui Oleh */}
                       <div className="form-group" style={{ marginBottom: "var(--space-3)" }}>
                         <label

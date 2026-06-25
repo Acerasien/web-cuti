@@ -34,6 +34,8 @@ interface LeaveData {
 
 interface LeavePdfTemplateProps {
   leave: LeaveData;
+  diketahuiName: string;
+  diketahuiPosition: string;
   disetujuiName: string;
   disetujuiPosition: string;
   diterimaName: string;
@@ -287,6 +289,8 @@ const styles = StyleSheet.create({
 
 export function LeavePdfTemplate({
   leave,
+  diketahuiName,
+  diketahuiPosition,
   disetujuiName,
   disetujuiPosition,
   diterimaName,
@@ -456,12 +460,12 @@ export function LeavePdfTemplate({
             <View style={styles.sigSpaceCell} />
             <View style={styles.sigNameCell}>
               <Text style={styles.sigNameText}>
-                {leave.user.namaAtasan || "Atasan Langsung"}
+                {diketahuiName}
               </Text>
             </View>
             <View style={styles.sigPositionCell}>
               <Text style={styles.sigPositionText}>
-                {leave.user.atasan?.position || "—"}
+                {diketahuiPosition}
               </Text>
             </View>
           </View>

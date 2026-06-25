@@ -71,7 +71,57 @@ export async function GET(req: NextRequest) {
       );
     });
 
+    // Diketahui Oleh: active users whose level is exactly the same as the employee's direct supervisor's level
+    let diketahuiOleh: typeof activeUsers = [];
+    if (employee.atasanId) {
+      const supervisor = await prisma.user.findUnique({
+        where: { id: employee.atasanId },
+        select: { id: true, name: true, level: true, position: true, department: true, role: true },
+      });
+      if (supervisor) {
+        if (supervisor.level) {
+          diketahuiOleh = await prisma.user.findMany({
+            where: {
+              isActive: true,
+              level: supervisor.level,
+            },
+            select: {
+              id: true,
+              name: true,
+              level: true,
+              department: true,
+              position: true,
+              role: true,
+            },
+            orderBy: { name: "asc" },
+          });
+        } else {
+          diketahuiOleh = [supervisor];
+        }
+      }
+    } else {
+      // Fallback: active users with rank >= 2 (Foreman and above)
+      diketahuiOleh = await prisma.user.findMany({
+        where: {
+          isActive: true,
+          level: {
+            in: Object.keys(HIERARCHY_RANKS).filter((lvl) => HIERARCHY_RANKS[lvl] >= 2),
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          level: true,
+          department: true,
+          position: true,
+          role: true,
+        },
+        orderBy: { name: "asc" },
+      });
+    }
+
     return NextResponse.json({
+      diketahuiOleh,
       disetujuiOleh,
       diterimaOleh,
     });
