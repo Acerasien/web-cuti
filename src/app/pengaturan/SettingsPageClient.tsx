@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   updateCompanySettings,
@@ -12,6 +12,7 @@ import {
   updateAdminUser,
   deleteAdminUser,
   triggerManualQuotaSync,
+  assignEmployeesToSubCompanyAction,
 } from "@/lib/actions/settings";
 import {
   Building2,
@@ -30,12 +31,19 @@ import {
   Activity,
   UserCheck,
   RefreshCw,
+  GitBranch,
+  Search,
+  UserMinus,
+  UserPlus,
+  X,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { HierarchyTab, KaryawanForHierarchy } from "./HierarchyTab";
 
 interface SubCompanyData {
   id: string;
   name: string;
+  code?: string | null;
   createdAt: string;
 }
 
@@ -64,6 +72,7 @@ interface SettingsPageClientProps {
   holidays: HolidayData[];
   adminUsers?: AdminUserData[];
   currentUserId?: string;
+  karyawanList?: KaryawanForHierarchy[];
 }
 
 export function SettingsPageClient({
@@ -72,11 +81,12 @@ export function SettingsPageClient({
   holidays = [],
   adminUsers = [],
   currentUserId = "",
+  karyawanList = [],
 }: SettingsPageClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [activeTab, setActiveTab] = useState<"CONFIG" | "SUB_COMPANY" | "HOLIDAY" | "ADMINS">("CONFIG");
+  const [activeTab, setActiveTab] = useState<"CONFIG" | "SUB_COMPANY" | "HOLIDAY" | "ADMINS" | "HIERARCHY">("CONFIG");
 
   // Company Settings Form State
   const [companyName, setCompanyName] = useState(initialSettings.companyName);
@@ -86,10 +96,25 @@ export function SettingsPageClient({
   const [settingsError, setSettingsError] = useState("");
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
+  const unassignedCount = useMemo(() => {
+    return karyawanList ? karyawanList.filter((k) => !k.atasanId).length : 0;
+  }, [karyawanList]);
+
   // System Maintenance Sync State
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState("");
   const [syncSuccess, setSyncSuccess] = useState<number | null>(null);
+
+  // Unit Bisnis Assignment State
+  const [selectedSubCompanyId, setSelectedSubCompanyId] = useState<string>(
+    subCompanies[0]?.id || ""
+  );
+  const [subCompanySearchQuery, setSubCompanySearchQuery] = useState("");
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [quickSearchQuery, setQuickSearchQuery] = useState("");
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [bulkCheckedIds, setBulkCheckedIds] = useState<Set<string>>(new Set());
+  const [bulkSearchQuery, setBulkSearchQuery] = useState("");
 
   const handleSyncQuotas = () => {
     setSyncError("");
@@ -363,6 +388,62 @@ export function SettingsPageClient({
     }
   };
 
+  // Unit Bisnis Memos
+  const assignedEmployees = useMemo(() => {
+    return karyawanList.filter((k) => k.subCompanyId === selectedSubCompanyId);
+  }, [karyawanList, selectedSubCompanyId]);
+
+  const filteredAssigned = useMemo(() => {
+    if (!subCompanySearchQuery.trim()) return assignedEmployees;
+    const query = subCompanySearchQuery.toLowerCase();
+    return assignedEmployees.filter((k) =>
+      k.name.toLowerCase().includes(query) ||
+      (k.department && k.department.toLowerCase().includes(query)) ||
+      (k.level && k.level.toLowerCase().includes(query))
+    );
+  }, [assignedEmployees, subCompanySearchQuery]);
+
+  const otherEmployees = useMemo(() => {
+    return karyawanList.filter((k) => k.subCompanyId !== selectedSubCompanyId);
+  }, [karyawanList, selectedSubCompanyId]);
+
+  const quickSearchResults = useMemo(() => {
+    if (!quickSearchQuery.trim()) return [];
+    const query = quickSearchQuery.toLowerCase();
+    return otherEmployees.filter((k) =>
+      k.name.toLowerCase().includes(query)
+    ).slice(0, 5);
+  }, [otherEmployees, quickSearchQuery]);
+
+  const filteredOther = useMemo(() => {
+    if (!bulkSearchQuery.trim()) return otherEmployees;
+    const query = bulkSearchQuery.toLowerCase();
+    return otherEmployees.filter((k) =>
+      k.name.toLowerCase().includes(query) ||
+      (k.subCompanyName && k.subCompanyName.toLowerCase().includes(query))
+    );
+  }, [otherEmployees, bulkSearchQuery]);
+
+  const handleAssignEmployees = (userIds: string[], targetSubCompanyId: string | null) => {
+    setSubCompanyError("");
+    setSubCompanySuccess(false);
+
+    startTransition(async () => {
+      const res = await assignEmployeesToSubCompanyAction(userIds, targetSubCompanyId);
+      if (res?.error) {
+        setSubCompanyError(res.error);
+      } else {
+        setSubCompanySuccess(true);
+        setBulkCheckedIds(new Set());
+        setBulkModalOpen(false);
+        setQuickSearchQuery("");
+        setQuickSearchOpen(false);
+        router.refresh();
+        setTimeout(() => setSubCompanySuccess(false), 3000);
+      }
+    });
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {/* Subtitle */}
@@ -434,6 +515,38 @@ export function SettingsPageClient({
         >
           <Shield size={14} style={{ marginRight: 6 }} />
           Kelola Admin ({adminUsers.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab("HIERARCHY")}
+          className={`btn btn-sm ${activeTab === "HIERARCHY" ? "btn-primary" : "btn-ghost"}`}
+          style={{
+            whiteSpace: "nowrap",
+            padding: "8px 16px",
+            minHeight: 36,
+            borderRadius: "var(--radius-md)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          <GitBranch size={14} />
+          <span>Atur Hierarki</span>
+          {unassignedCount > 0 && (
+            <span
+              style={{
+                fontSize: "10px",
+                fontWeight: "bold",
+                background: "var(--color-warning)",
+                color: "white",
+                padding: "2px 6px",
+                borderRadius: "var(--radius-full)",
+                lineHeight: 1,
+              }}
+            >
+              {unassignedCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -611,141 +724,348 @@ export function SettingsPageClient({
       )}
 
       {activeTab === "SUB_COMPANY" && (
-        <div style={{ maxWidth: "700px" }}>
-          <div className="card-outer">
-            <div className="card-inner">
-              <div className="flex items-center gap-2 mb-6">
-                <Building size={20} className="text-accent" />
-                <h3 className="card-title" style={{ margin: 0 }}>
-                  Daftar Unit Bisnis (Sub-Company)
-                </h3>
-              </div>
-
-              {subCompanyError && (
-                <div
-                  className="form-error mb-4"
-                  style={{
-                    padding: "var(--space-2) var(--space-3)",
-                    background: "var(--color-danger-light)",
-                    color: "var(--color-danger)",
-                    borderRadius: "var(--radius-md)",
-                    border: "1px solid rgba(220,38,38,0.2)",
-                    fontSize: "var(--text-xs)",
-                  }}
-                >
-                  {subCompanyError}
-                </div>
-              )}
-
-              {subCompanySuccess && (
-                <div
-                  className="mb-4"
-                  style={{
-                    padding: "var(--space-2) var(--space-3)",
-                    background: "var(--color-success-light)",
-                    color: "var(--color-success)",
-                    borderRadius: "var(--radius-md)",
-                    border: "1px solid rgba(22,163,74,0.2)",
-                    fontSize: "var(--text-xs)",
-                    fontWeight: 500,
-                  }}
-                >
-                  Unit Bisnis berhasil ditambahkan!
-                </div>
-              )}
-
-              {/* Inline Add Form */}
-              <form onSubmit={handleAddSubCompany} className="flex gap-2 mb-6">
-                <input
-                  type="text"
-                  className="form-input flex-1"
-                  placeholder="Tambah Unit Bisnis baru..."
-                  style={{ minHeight: 40 }}
-                  value={newSubCompanyName}
-                  onChange={(e) => setNewSubCompanyName(e.target.value)}
-                  disabled={isPending}
-                />
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="btn btn-accent btn-sm"
-                  style={{ minHeight: 40, width: 40, padding: 0 }}
-                >
-                  {isPending && newSubCompanyName ? (
-                    <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
-                  ) : (
-                    <Plus size={18} />
-                  )}
-                </button>
-              </form>
-
-              {/* List */}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                  maxHeight: 400,
-                  overflowY: "auto",
-                  paddingRight: 4,
-                }}
-              >
-                {subCompanies.length === 0 ? (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: "24px 0",
-                      color: "var(--color-text-light)",
-                      fontSize: "var(--text-xs)",
-                      border: "1px dashed var(--color-border)",
-                      borderRadius: "var(--radius-md)",
-                    }}
-                  >
-                    <Building size={24} style={{ marginBottom: 8, opacity: 0.5 }} />
-                    Belum ada Unit Bisnis terdaftar.
+        <div style={{ width: "100%" }}>
+          <style>{`
+            .subcompany-layout {
+              display: flex;
+              flex-direction: row;
+              gap: var(--space-6);
+              align-items: stretch;
+              width: 100%;
+            }
+            .subcompany-sidebar {
+              width: 320px;
+              flex-shrink: 0;
+            }
+            .subcompany-detail {
+              flex: 1;
+              min-width: 0;
+            }
+            .subcompany-layout .full-height {
+              height: 100%;
+            }
+            @media (max-width: 1024px) {
+              .subcompany-layout {
+                flex-direction: column;
+              }
+              .subcompany-sidebar {
+                width: 100%;
+              }
+            }
+          `}</style>
+          <div className="subcompany-layout">
+            {/* Left Column: Master List of Unit Bisnis */}
+            <div className="subcompany-sidebar">
+              <div className="card-outer full-height">
+                <div className="card-inner full-height" style={{ padding: "var(--space-5)" }}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Building size={18} className="text-accent" />
+                    <h3 className="card-title" style={{ margin: 0, fontSize: "var(--text-md)" }}>
+                      Daftar Unit Bisnis
+                    </h3>
                   </div>
-                ) : (
-                  subCompanies.map((sc) => (
-                    <div
-                      key={sc.id}
-                      className="flex justify-between items-center"
-                      style={{
-                        padding: "10px 16px",
-                        background: "var(--color-bg)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: "var(--radius-md)",
-                      }}
-                    >
-                      <div className="flex flex-col">
-                        <span style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>
-                          {sc.name}
-                        </span>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {subCompanies.map((sc) => {
+                      const count = karyawanList.filter((k) => k.subCompanyId === sc.id).length;
+                      const isActive = selectedSubCompanyId === sc.id;
+                      return (
+                        <div
+                          key={sc.id}
+                          onClick={() => {
+                            setSelectedSubCompanyId(sc.id);
+                            setSubCompanySearchQuery("");
+                          }}
+                          style={{
+                            padding: "12px 16px",
+                            background: isActive ? "var(--color-primary-light)" : "var(--color-bg)",
+                            border: isActive
+                              ? "1.5px solid var(--color-primary)"
+                              : "1.5px solid var(--color-border)",
+                            borderRadius: "var(--radius-md)",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <span style={{ fontWeight: 700, fontSize: "var(--text-sm)", color: isActive ? "var(--color-primary-hover)" : "var(--color-text)" }}>
+                              {sc.code || "—"}
+                            </span>
+                            <span style={{ fontSize: "11px", color: isActive ? "var(--color-primary-hover)" : "var(--color-text-muted)", maxWidth: 180, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {sc.name}
+                            </span>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: "var(--text-xs)",
+                              fontWeight: 700,
+                              padding: "4px 8px",
+                              backgroundColor: isActive ? "var(--color-primary)" : "var(--color-border)",
+                              color: isActive ? "#ffffff" : "var(--color-text-muted)",
+                              borderRadius: "12px",
+                            }}
+                          >
+                            {count}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Detail Panel */}
+            <div className="subcompany-detail">
+              <div className="card-outer full-height">
+                <div className="card-inner full-height" style={{ padding: "var(--space-6)" }}>
+                  {(() => {
+                    const activeSC = subCompanies.find((sc) => sc.id === selectedSubCompanyId);
+                    if (!activeSC) {
+                      return (
+                        <div className="flex flex-col items-center justify-center py-20 text-muted">
+                          <Building size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
+                          Pilih Unit Bisnis di sebelah kiri untuk mengelola karyawan.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-col full-height justify-between">
+                        <div>
+                          {/* Header */}
+                          <div className="flex justify-between items-center mb-6 pb-4" style={{ borderBottom: "1.5px solid var(--color-border)" }}>
+                            <div>
+                              <h3 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: 700 }}>
+                                {activeSC.name}
+                              </h3>
+                              <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", fontWeight: 600 }}>
+                                Kode Unit: {activeSC.code || "—"} • {assignedEmployees.length} Karyawan Terdaftar
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Error / Success */}
+                          {subCompanyError && (
+                            <div
+                              className="form-error mb-4"
+                              style={{
+                                padding: "var(--space-2) var(--space-3)",
+                                background: "var(--color-danger-light)",
+                                color: "var(--color-danger)",
+                                borderRadius: "var(--radius-md)",
+                                border: "1px solid rgba(220,38,38,0.2)",
+                                fontSize: "var(--text-xs)",
+                              }}
+                            >
+                              {subCompanyError}
+                            </div>
+                          )}
+
+                          {subCompanySuccess && (
+                            <div
+                              className="mb-4"
+                              style={{
+                                padding: "var(--space-2) var(--space-3)",
+                                background: "var(--color-success-light)",
+                                color: "var(--color-success)",
+                                borderRadius: "var(--radius-md)",
+                                border: "1px solid rgba(22,163,74,0.2)",
+                                fontSize: "var(--text-xs)",
+                                fontWeight: 500,
+                              }}
+                            >
+                              Perubahan Unit Bisnis berhasil disimpan!
+                            </div>
+                          )}
+
+                          {/* Quick Add Search & Bulk Transfer Row */}
+                          <div className="flex gap-4 mb-6" style={{ alignItems: "flex-end", width: "100%" }}>
+                            {/* Quick Add Search Field Container */}
+                            <div style={{ flex: 1, position: "relative" }}>
+                              <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--color-text-muted)", marginBottom: "8px", display: "block" }}>
+                                Tambah Karyawan (Cepat)
+                              </label>
+                              <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                                <Search size={14} className="text-light" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  placeholder="Cari nama karyawan untuk ditambahkan..."
+                                  style={{ paddingLeft: 36, minHeight: 40, fontSize: "var(--text-sm)" }}
+                                  value={quickSearchQuery}
+                                  onChange={(e) => {
+                                    setQuickSearchQuery(e.target.value);
+                                    setQuickSearchOpen(true);
+                                  }}
+                                  onFocus={() => setQuickSearchOpen(true)}
+                                  disabled={isPending}
+                                />
+                                {quickSearchQuery && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQuickSearchQuery("");
+                                      setQuickSearchOpen(false);
+                                    }}
+                                    style={{ position: "absolute", right: 12, background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                                  >
+                                    <X size={14} style={{ color: "var(--color-text-light)" }} />
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Autocomplete suggestions */}
+                              {quickSearchOpen && quickSearchResults.length > 0 && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: "100%",
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 10,
+                                    backgroundColor: "#ffffff",
+                                    border: "1.5px solid var(--color-border)",
+                                    borderRadius: "var(--radius-md)",
+                                    boxShadow: "var(--shadow-lg)",
+                                    marginTop: 4,
+                                    maxHeight: 200,
+                                    overflowY: "auto",
+                                  }}
+                                >
+                                  {quickSearchResults.map((emp) => (
+                                    <div
+                                      key={emp.id}
+                                      onClick={() => handleAssignEmployees([emp.id], selectedSubCompanyId)}
+                                      style={{
+                                        padding: "10px 14px",
+                                        cursor: "pointer",
+                                        borderBottom: "1px solid var(--color-border)",
+                                        transition: "background 0.2s",
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                      }}
+                                      className="autocomplete-item-hover"
+                                    >
+                                      <span style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>{emp.name}</span>
+                                      <span style={{ fontSize: "10px", color: "var(--color-text-light)" }}>
+                                        {emp.subCompanyName || "Belum ada Unit"}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {quickSearchOpen && quickSearchQuery.trim() && quickSearchResults.length === 0 && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: "100%",
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 10,
+                                    backgroundColor: "#ffffff",
+                                    border: "1.5px solid var(--color-border)",
+                                    borderRadius: "var(--radius-md)",
+                                    boxShadow: "var(--shadow-lg)",
+                                    marginTop: 4,
+                                    padding: "12px",
+                                    fontSize: "var(--text-xs)",
+                                    color: "var(--color-text-light)",
+                                    textAlign: "center",
+                                  }}
+                                >
+                                  Tidak ada karyawan yang cocok.
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Bulk Move Button */}
+                            <div>
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                style={{ minHeight: 40, display: "inline-flex", gap: 6, fontSize: "var(--text-sm)" }}
+                                onClick={() => {
+                                  setBulkSearchQuery("");
+                                  setBulkCheckedIds(new Set());
+                                  setBulkModalOpen(true);
+                                }}
+                                disabled={isPending}
+                              >
+                                <UserPlus size={16} />
+                                Pindahkan Masal
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* List Search */}
+                          <div style={{ position: "relative", marginBottom: 15 }}>
+                            <Search size={14} className="text-light" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="Cari karyawan terdaftar di unit ini..."
+                              style={{ paddingLeft: 36, minHeight: 38, fontSize: "var(--text-xs)" }}
+                              value={subCompanySearchQuery}
+                              onChange={(e) => setSubCompanySearchQuery(e.target.value)}
+                            />
+                          </div>
+
+                          {/* Assigned List Grid */}
+                          <div style={{ maxHeight: 350, overflowY: "auto", border: "1.5px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+                            {filteredAssigned.length === 0 ? (
+                              <div style={{ textAlign: "center", padding: "32px 0", color: "var(--color-text-light)", fontSize: "var(--text-xs)" }}>
+                                {subCompanySearchQuery.trim() ? "Karyawan tidak ditemukan." : "Belum ada karyawan terdaftar di Unit Bisnis ini."}
+                              </div>
+                            ) : (
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-xs)" }}>
+                                <thead>
+                                  <tr style={{ background: "var(--color-bg)", borderBottom: "1.5px solid var(--color-border)" }}>
+                                    <th style={{ textAlign: "left", padding: "10px 16px", fontWeight: 700 }}>Nama Karyawan</th>
+                                    <th style={{ textAlign: "left", padding: "10px 16px", fontWeight: 700 }}>Departemen</th>
+                                    <th style={{ textAlign: "left", padding: "10px 16px", fontWeight: 700 }}>Level</th>
+                                    <th style={{ width: 60 }}></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filteredAssigned.map((emp) => (
+                                    <tr key={emp.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                                      <td style={{ padding: "10px 16px", fontWeight: 600 }}>{emp.name}</td>
+                                      <td style={{ padding: "10px 16px", color: "var(--color-text-muted)" }}>{emp.department || "—"}</td>
+                                      <td style={{ padding: "10px 16px", color: "var(--color-text-muted)" }}>{emp.level || "—"}</td>
+                                      <td style={{ padding: "8px 16px", textAlign: "right" }}>
+                                        <button
+                                          type="button"
+                                          className="btn btn-ghost btn-sm"
+                                          title="Lepaskan Karyawan"
+                                          disabled={isPending}
+                                          onClick={() => handleAssignEmployees([emp.id], null)}
+                                          style={{
+                                            color: "var(--color-danger)",
+                                            padding: 6,
+                                            minHeight: 28,
+                                            width: 28,
+                                            borderRadius: "50%",
+                                          }}
+                                        >
+                                          <UserMinus size={14} />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        disabled={isPending || deletePendingId !== null}
-                        onClick={() => handleDeleteSubCompany(sc.id, sc.name)}
-                        className="btn btn-ghost btn-sm"
-                        style={{
-                          color: "var(--color-danger)",
-                          padding: 6,
-                          minHeight: 30,
-                          width: 30,
-                          borderRadius: "50%",
-                        }}
-                      >
-                        {deletePendingId === sc.id ? (
-                          <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-                        ) : (
-                          <Trash2 size={14} />
-                        )}
-                      </button>
-                    </div>
-                  ))
-                )}
+                    );
+                  })()}
+                </div>
               </div>
             </div>
           </div>
@@ -1397,6 +1717,241 @@ export function SettingsPageClient({
           )}
         </div>
       )}
+
+      {/* Unit Bisnis Bulk Assignment Modal */}
+      {bulkModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "var(--space-4)",
+            backgroundColor: "rgba(15, 23, 42, 0.4)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            transition: "all 0.3s ease",
+          }}
+        >
+          <div
+            style={{ position: "absolute", inset: 0 }}
+            onClick={() => !isPending && setBulkModalOpen(false)}
+          />
+
+          <div
+            className="card-outer animate-modal-scale"
+            style={{
+              position: "relative",
+              zIndex: 1,
+              width: "100%",
+              maxWidth: 550,
+              boxShadow: "var(--shadow-lg)",
+              border: "1px solid var(--color-border)",
+            }}
+          >
+            <div className="card-inner" style={{ padding: "var(--space-6)" }}>
+              {/* Header */}
+              <div
+                className="flex justify-between items-start mb-6"
+                style={{ borderBottom: "1px solid var(--color-border)", paddingBottom: 16 }}
+              >
+                <div>
+                  <h3 className="card-title" style={{ margin: 0, fontSize: "var(--text-lg)" }}>
+                    Pindahkan Karyawan secara Masal
+                  </h3>
+                  {(() => {
+                    const activeSC = subCompanies.find((sc) => sc.id === selectedSubCompanyId);
+                    return (
+                      <p className="text-xs text-muted mt-1">
+                        Pilih karyawan untuk dipindahkan ke unit bisnis:{" "}
+                        <strong style={{ color: "var(--color-primary-hover)" }}>
+                          {activeSC?.name} ({activeSC?.code})
+                        </strong>
+                      </p>
+                    );
+                  })()}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBulkModalOpen(false)}
+                  disabled={isPending}
+                  className="btn btn-ghost btn-sm"
+                  style={{
+                    minHeight: 32,
+                    width: 32,
+                    padding: 0,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div style={{ position: "relative", marginBottom: 15 }}>
+                <Search size={14} className="text-light" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Cari karyawan berdasarkan nama atau unit bisnis..."
+                  style={{ paddingLeft: 36, minHeight: 38, fontSize: "var(--text-xs)" }}
+                  value={bulkSearchQuery}
+                  onChange={(e) => setBulkSearchQuery(e.target.value)}
+                />
+              </div>
+
+              {/* Checklist list */}
+              <div
+                style={{
+                  maxHeight: 250,
+                  overflowY: "auto",
+                  border: "1.5px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  marginBottom: 20,
+                }}
+              >
+                {filteredOther.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "32px 0", color: "var(--color-text-light)", fontSize: "var(--text-xs)" }}>
+                    Tidak ada karyawan yang dapat dipindahkan.
+                  </div>
+                ) : (
+                  <div>
+                    {/* Header Select All */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "10px 16px",
+                        background: "var(--color-bg)",
+                        borderBottom: "1.5px solid var(--color-border)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        id="selectAllBulk"
+                        checked={
+                          filteredOther.length > 0 &&
+                          filteredOther.every((emp) => bulkCheckedIds.has(emp.id))
+                        }
+                        onChange={(e) => {
+                          const newChecked = new Set(bulkCheckedIds);
+                          if (e.target.checked) {
+                            filteredOther.forEach((emp) => newChecked.add(emp.id));
+                          } else {
+                            filteredOther.forEach((emp) => newChecked.delete(emp.id));
+                          }
+                          setBulkCheckedIds(newChecked);
+                        }}
+                        style={{ width: 16, height: 16, cursor: "pointer" }}
+                      />
+                      <label
+                        htmlFor="selectAllBulk"
+                        style={{ fontSize: "var(--text-xs)", fontWeight: 700, cursor: "pointer", userSelect: "none" }}
+                      >
+                        Pilih Semua ({filteredOther.length})
+                      </label>
+                    </div>
+
+                    {/* Employee Checklist Rows */}
+                    {filteredOther.map((emp) => {
+                      const isChecked = bulkCheckedIds.has(emp.id);
+                      return (
+                        <div
+                          key={emp.id}
+                          onClick={() => {
+                            const newChecked = new Set(bulkCheckedIds);
+                            if (newChecked.has(emp.id)) {
+                              newChecked.delete(emp.id);
+                            } else {
+                              newChecked.add(emp.id);
+                            }
+                            setBulkCheckedIds(newChecked);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            padding: "10px 16px",
+                            borderBottom: "1px solid var(--color-border)",
+                            cursor: "pointer",
+                            transition: "background 0.2s",
+                          }}
+                          className="autocomplete-item-hover"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}} // handled by row click
+                            style={{ width: 15, height: 15, cursor: "pointer" }}
+                          />
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            <span style={{ fontSize: "var(--text-xs)", fontWeight: 600 }}>{emp.name}</span>
+                            <span style={{ fontSize: "10px", color: "var(--color-text-light)" }}>
+                              Unit Saat Ini: {emp.subCompanyName || "Belum ada Unit Bisnis"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div
+                className="flex justify-end gap-3 pt-4"
+                style={{ borderTop: "1.5px solid var(--color-border)" }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setBulkModalOpen(false)}
+                  disabled={isPending}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isPending || bulkCheckedIds.size === 0}
+                  onClick={() =>
+                    handleAssignEmployees(Array.from(bulkCheckedIds), selectedSubCompanyId)
+                  }
+                  style={{ display: "inline-flex", gap: 8, alignItems: "center" }}
+                >
+                  {isPending ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      Memindahkan...
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus size={16} />
+                      Pindahkan ({bulkCheckedIds.size}) Karyawan
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "HIERARCHY" && (
+        <HierarchyTab initialKaryawan={karyawanList} />
+      )}
+
+      <style jsx global>{`
+        .autocomplete-item-hover:hover {
+          background-color: var(--color-bg) !important;
+        }
+      `}</style>
     </div>
   );
 }

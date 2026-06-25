@@ -364,3 +364,35 @@ export async function triggerManualQuotaSync() {
   }
 }
 
+export async function assignEmployeesToSubCompanyAction(
+  employeeIds: string[],
+  subCompanyId: string | null
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || (session.user.role !== "SUPERADMIN" && session.user.role !== "ADMIN")) {
+      return { error: "Akses ditolak. Anda tidak memiliki akses untuk mengatur Unit Bisnis karyawan." };
+    }
+
+    if (!Array.isArray(employeeIds)) {
+      return { error: "Daftar ID karyawan tidak valid." };
+    }
+
+    await prisma.user.updateMany({
+      where: {
+        id: { in: employeeIds },
+      },
+      data: {
+        subCompanyId,
+      },
+    });
+
+    revalidatePath("/pengaturan");
+    revalidatePath("/karyawan");
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error in assignEmployeesToSubCompanyAction:", error);
+    return { error: "Terjadi kesalahan server saat memperbarui Unit Bisnis karyawan." };
+  }
+}
+

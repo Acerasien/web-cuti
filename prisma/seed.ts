@@ -15,6 +15,27 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log("🌱 Seeding database...");
 
+  // Seed fixed SubCompanies (Unit Bisnis)
+  const subCompaniesData = [
+    { name: "PT. Bukit Arta Persada", code: "BAP" },
+    { name: "PT. Andamas Propertindo", code: "AP" },
+    { name: "PT. Batubara Lahat", code: "BL" },
+    { name: "PT. Muncul Kilau Bersada", code: "MKP" },
+    { name: "PT. Andamas Global Energi", code: "AGE" },
+    { name: "PT. Long Daliq Primacoal", code: "LDL" },
+    { name: "PT. Long Daliq Logistik", code: "LDP" },
+  ];
+
+  console.log("🌱 Seeding SubCompanies...");
+  for (const sc of subCompaniesData) {
+    await prisma.subCompany.upsert({
+      where: { name: sc.name },
+      update: { code: sc.code },
+      create: { name: sc.name, code: sc.code },
+    });
+  }
+  console.log("✅ SubCompanies upserted");
+
   // Create company settings
   const existingSettings = await prisma.companySetting.findFirst();
   if (!existingSettings) {

@@ -74,7 +74,7 @@ export function KaryawanListClient({
           "NIK",
           "Email",
           "Username",
-          "Tanggal Bergabung (YYYY-MM-DD)",
+          "Tanggal Bergabung (DD/MM/YYYY)",
           "Unit Bisnis",
           "Departemen",
           "Jabatan",
@@ -90,11 +90,11 @@ export function KaryawanListClient({
           "12345678",
           "budi@company.com",
           "budi.santoso",
-          "2026-01-15",
+          "15/01/2026",
           subCompanies[0]?.name || "Unit Bisnis A",
-          "IT",
+          "Engineering",
           "Software Engineer",
-          "Staff",
+          "Staff - Manager",
           "Jakarta",
           "Password123"
         ]
@@ -172,7 +172,8 @@ export function KaryawanListClient({
     setImportState({ status: "importing", message: "Mengunggah dan memproses data..." });
     
     try {
-      const res = await importKaryawanAction(parsedRows);
+      const sanitizedRows = JSON.parse(JSON.stringify(parsedRows));
+      const res = await importKaryawanAction(sanitizedRows);
       if (res.error) {
         setImportState({ status: "error", message: res.error });
       } else {

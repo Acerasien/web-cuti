@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
 import { getAccruedQuotaDays } from "@/lib/accrual";
+import { isEligibleSupervisor } from "@/lib/hierarchy";
 
 export async function createKaryawanUser(prevState: any, formData: FormData) {
   try {
@@ -456,6 +457,71 @@ export async function deleteKaryawanUser(userId: string) {
   }
 }
 
+function parseDDMMYYYY(dateStr: string): Date | null {
+  const regex = /^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/;
+  const match = dateStr.trim().match(regex);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1; // 0-indexed month
+    const year = parseInt(match[3], 10);
+    const date = new Date(year, month, day);
+    if (date.getFullYear() === year && date.getMonth() === month && date.getDate() === day) {
+      return date;
+    }
+  }
+  return null;
+}
+
+function normalizeDepartment(dept: string | null): string | null {
+  if (!dept) return null;
+  const deptLower = dept.trim().toLowerCase();
+  
+  const mapping: Record<string, string> = {
+    hrga: "HRGA",
+    production: "Production",
+    engineering: "Engineering",
+    hse: "HSE",
+    legal: "Legal",
+    fat: "FAT",
+    csr: "CSR",
+    plant: "Plant",
+    scm: "SCM",
+    management: "Management"
+  };
+  
+  return mapping[deptLower] ?? dept.trim();
+}
+
+function normalizeLevel(lvl: string | null): string | null {
+  if (!lvl) return null;
+  const lvlLower = lvl.trim().toLowerCase();
+  
+  const mapping: Record<string, string> = {
+    "non staff - clerk": "Non Staff - Skill",
+    "non staff - skill": "Non Staff - Skill",
+    "non staff - operator": "Non Staff - Operator",
+    "non staff - mekanik": "Non Staff - Mekanik",
+    "non staff - non skill": "Non Staff - Non Skill",
+    "staff - superintendent": "Staff - Superintendent",
+    "staff - supervisor": "Staff - Supervisor",
+    "staff - foreman": "Staff - Foreman",
+    "staff - manager": "Staff - Manager",
+    "staff - general manager": "Staff - General Manager",
+    "clerk": "Non Staff - Skill",
+    "skill": "Non Staff - Skill",
+    "operator": "Non Staff - Operator",
+    "mekanik": "Non Staff - Mekanik",
+    "non skill": "Non Staff - Non Skill",
+    "superintendent": "Staff - Superintendent",
+    "supervisor": "Staff - Supervisor",
+    "foreman": "Staff - Foreman",
+    "manager": "Staff - Manager",
+    "general manager": "Staff - General Manager"
+  };
+  
+  return mapping[lvlLower] ?? lvl.trim();
+}
+
 export async function importKaryawanAction(records: any[]) {
   try {
     const session = await getServerSession(authOptions);
@@ -474,7 +540,13 @@ export async function importKaryawanAction(records: any[]) {
 
     // Prefetch database lookups to optimize performance
     const subCompanies = await prisma.subCompany.findMany();
-    const subCompanyMap = new Map(subCompanies.map(sc => [sc.name.trim().toLowerCase(), sc.id]));
+    const subCompanyMap = new Map<string, string>();
+    for (const sc of subCompanies) {
+      subCompanyMap.set(sc.name.trim().toLowerCase(), sc.id);
+      if (sc.code) {
+        subCompanyMap.set(sc.code.trim().toLowerCase(), sc.id);
+      }
+    }
 
     const existingUsers = await prisma.user.findMany({
       select: {
@@ -527,11 +599,14 @@ export async function importKaryawanAction(records: any[]) {
       const nik = getVal(["NIK", "nik", "nomor induk karyawan"]);
       const email = getVal(["Email", "email", "surel"]);
       const username = getVal(["Username", "username"]);
-      const rawJoinDate = getVal(["Tanggal Bergabung (YYYY-MM-DD)", "Tanggal Bergabung", "join date", "joinDate"]);
+      const rawJoinDate = getVal(["Tanggal Bergabung (DD/MM/YYYY)", "Tanggal Bergabung (YYYY-MM-DD)", "Tanggal Bergabung", "join date", "joinDate"]);
       const subCompanyName = getVal(["Unit Bisnis", "Sub Company", "subCompany", "unit_bisnis"]);
-      const department = getVal(["Departemen", "Department", "department"]);
+      const rawDepartment = getVal(["Departemen", "Department", "department"]);
       const position = getVal(["Jabatan", "Position", "position", "jabatan"]);
-      const level = getVal(["Level", "level"]);
+      const rawLevel = getVal(["Level", "level"]);
+      
+      const department = normalizeDepartment(rawDepartment);
+      const level = normalizeLevel(rawLevel);
       const lokasiKerja = getVal(["Lokasi Kerja", "Work Location", "lokasi_kerja", "lokasikerja"]);
       const password = getVal(["Password", "password", "kata sandi"]);
 
@@ -549,7 +624,7 @@ export async function importKaryawanAction(records: any[]) {
       const usernameTrim = username || null;
       if (!emailTrim && !usernameTrim) {
         results.failedCount++;
-        results.errors.push({ row: rowNum, name: displayName, error: "Salah satu dari Email atau Username wajib diisi agar karyawan dapat login." });
+        results.errors.push({ row: rowNum, name: displayName, error: "Salah satu dari Email or Username wajib diisi agar karyawan dapat login." });
         continue;
       }
 
@@ -560,7 +635,7 @@ export async function importKaryawanAction(records: any[]) {
         continue;
       }
 
-      let joinDate: Date;
+      let joinDate: Date | null = null;
       // Handle Excel serial date or standard date parsing
       if (!isNaN(Number(rawJoinDate))) {
         // Excel serial date number
@@ -568,12 +643,20 @@ export async function importKaryawanAction(records: any[]) {
         // Excel date starts from 1900-01-01
         joinDate = new Date(Math.round((serial - 25569) * 86400 * 1000));
       } else {
-        joinDate = new Date(rawJoinDate);
+        // Try parsing DD/MM/YYYY first
+        joinDate = parseDDMMYYYY(rawJoinDate);
+        if (!joinDate) {
+          // Fallback to standard JS date parsing
+          const parsed = new Date(rawJoinDate);
+          if (!isNaN(parsed.getTime())) {
+            joinDate = parsed;
+          }
+        }
       }
 
-      if (isNaN(joinDate.getTime())) {
+      if (!joinDate || isNaN(joinDate.getTime())) {
         results.failedCount++;
-        results.errors.push({ row: rowNum, name: displayName, error: `Format Tanggal Bergabung tidak valid: '${rawJoinDate}'. Harap gunakan format YYYY-MM-DD.` });
+        results.errors.push({ row: rowNum, name: displayName, error: `Format Tanggal Bergabung tidak valid: '${rawJoinDate}'. Harap gunakan format DD/MM/YYYY.` });
         continue;
       }
 
@@ -704,5 +787,92 @@ export async function importKaryawanAction(records: any[]) {
     return { error: "Terjadi kesalahan server saat mengimpor data karyawan." };
   }
 }
+
+export async function assignSupervisorAction(employeeIds: string[], supervisorId: string) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return { error: "Sesi Anda telah berakhir. Silakan login kembali." };
+    }
+
+    const currentUserRole = session.user.role;
+    if (currentUserRole !== "SUPERADMIN" && currentUserRole !== "ADMIN") {
+      return { error: "Anda tidak memiliki akses untuk mengatur hierarki karyawan." };
+    }
+
+    const supervisor = await prisma.user.findUnique({
+      where: { id: supervisorId },
+      select: { id: true, name: true, level: true },
+    });
+
+    if (!supervisor) {
+      return { error: "Supervisor tidak ditemukan." };
+    }
+
+    const employees = await prisma.user.findMany({
+      where: { id: { in: employeeIds } },
+      select: { id: true, name: true, level: true },
+    });
+
+    const successIds: string[] = [];
+    const failedIds: string[] = [];
+    const errors: { id: string; reason: string }[] = [];
+
+    for (const emp of employees) {
+      if (!isEligibleSupervisor(emp.level, supervisor.level)) {
+        failedIds.push(emp.id);
+        errors.push({
+          id: emp.id,
+          reason: `Level supervisor (${supervisor.level || "Kosong"}) tidak lebih tinggi dari level karyawan ${emp.name} (${emp.level || "Kosong"}).`,
+        });
+        continue;
+      }
+
+      await prisma.user.update({
+        where: { id: emp.id },
+        data: {
+          atasanId: supervisor.id,
+          namaAtasan: supervisor.name,
+        },
+      });
+      successIds.push(emp.id);
+    }
+
+    revalidatePath("/pengaturan");
+    return { success: true, successIds, failedIds, errors };
+  } catch (error: any) {
+    console.error("Error in assignSupervisorAction:", error);
+    return { error: "Terjadi kesalahan server saat memperbarui hierarki." };
+  }
+}
+
+export async function unassignSupervisorAction(employeeId: string) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return { error: "Sesi Anda telah berakhir. Silakan login kembali." };
+    }
+
+    const currentUserRole = session.user.role;
+    if (currentUserRole !== "SUPERADMIN" && currentUserRole !== "ADMIN") {
+      return { error: "Anda tidak memiliki akses untuk mengatur hierarki karyawan." };
+    }
+
+    await prisma.user.update({
+      where: { id: employeeId },
+      data: {
+        atasanId: null,
+        namaAtasan: null,
+      },
+    });
+
+    revalidatePath("/pengaturan");
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error in unassignSupervisorAction:", error);
+    return { error: "Terjadi kesalahan server saat menghapus supervisor." };
+  }
+}
+
 
 

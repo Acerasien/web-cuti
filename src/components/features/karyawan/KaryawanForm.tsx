@@ -354,7 +354,7 @@ export function KaryawanForm({ initialData, subCompanies = [], potentialSupervis
                     disabled={isPending}
                   >
                     <option value="">Pilih Level Karyawan...</option>
-                    <option value="Non Staff - Clerk">Non Staff - Clerk</option>
+                    <option value="Non Staff - Skill">Non Staff - Skill</option>
                     <option value="Non Staff - Operator">Non Staff - Operator</option>
                     <option value="Non Staff - Mekanik">Non Staff - Mekanik</option>
                     <option value="Non Staff - Non Skill">Non Staff - Non Skill</option>
@@ -367,7 +367,7 @@ export function KaryawanForm({ initialData, subCompanies = [], potentialSupervis
                 </div>
               </div>
 
-              <div className="form-group">
+               <div className="form-group">
                 <label htmlFor="department" className="form-label">
                   Departemen
                 </label>
@@ -377,16 +377,26 @@ export function KaryawanForm({ initialData, subCompanies = [], potentialSupervis
                     className="text-light"
                     style={{ position: "absolute", left: 12, pointerEvents: "none" }}
                   />
-                  <input
+                  <select
                     id="department"
-                    type="text"
-                    className="form-input w-full"
+                    className="form-select w-full"
                     style={{ paddingLeft: 38 }}
-                    placeholder="Engineering"
                     value={department}
                     onChange={(e) => setDepartment(e.target.value)}
                     disabled={isPending}
-                  />
+                  >
+                    <option value="">Pilih Departemen...</option>
+                    <option value="HRGA">HRGA</option>
+                    <option value="Production">Production</option>
+                    <option value="Engineering">Engineering</option>
+                    <option value="HSE">HSE</option>
+                    <option value="Legal">Legal</option>
+                    <option value="FAT">FAT</option>
+                    <option value="CSR">CSR</option>
+                    <option value="Plant">Plant</option>
+                    <option value="SCM">SCM</option>
+                    <option value="Management">Management</option>
+                  </select>
                 </div>
               </div>
             </div>

@@ -1,5 +1,5 @@
 export const HIERARCHY_RANKS: Record<string, number> = {
-  "Non Staff - Clerk": 1,
+  "Non Staff - Skill": 1,
   "Non Staff - Operator": 1,
   "Non Staff - Mekanik": 1,
   "Non Staff - Non Skill": 1,

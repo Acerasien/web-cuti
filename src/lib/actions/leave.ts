@@ -354,3 +354,208 @@ export async function getBookedLeaveDates(userId: string): Promise<string[]> {
   }
 }
 
+// Valid leave type values from the Prisma enum
+const VALID_LEAVE_TYPES: LeaveType[] = [
+  "CUTI_TAHUNAN",
+  "SAKIT",
+  "PERNIKAHAN_KARYAWAN",
+  "PERNIKAHAN_ANAK",
+  "KHITAN_BAPTIS",
+  "ISTRI_MELAHIRKAN",
+  "KEMATIAN_KELUARGA",
+  "KARYAWATI_MELAHIRKAN",
+  "KARYAWATI_KEGUGURAN",
+  "IZIN_LAINNYA",
+];
+
+interface ImportLeaveRow {
+  nik: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  // Resolved during preview — passed along for convenience
+  resolvedUserId?: string;
+}
+
+interface ImportLeaveError {
+  row: number;
+  nik: string;
+  error: string;
+}
+
+export async function importLeaveHistoryAction(rows: ImportLeaveRow[]): Promise<{
+  error?: string;
+  results?: {
+    successCount: number;
+    failedCount: number;
+    errors: ImportLeaveError[];
+  };
+}> {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return { error: "Sesi Anda telah berakhir. Silakan login kembali." };
+    }
+
+    const role = session.user.role;
+    if (role !== "ADMIN" && role !== "SUPERADMIN") {
+      return { error: "Hanya Admin HR atau Superadmin yang dapat mengimpor data riwayat." };
+    }
+
+    if (!rows || rows.length === 0) {
+      return { error: "Tidak ada baris data untuk diimpor." };
+    }
+
+    const errors: ImportLeaveError[] = [];
+    const validRows: {
+      userId: string;
+      leaveType: LeaveType;
+      startDate: Date;
+      endDate: Date;
+      totalDays: number;
+      annualQuotaId: string | null;
+    }[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 1;
+      const nik = String(row.nik ?? "").trim();
+
+      // 1. Validate NIK
+      if (!nik) {
+        errors.push({ row: rowNum, nik: nik || "—", error: "NIK tidak boleh kosong." });
+        continue;
+      }
+
+      const employee = await prisma.user.findUnique({
+        where: { nik },
+        select: { id: true, name: true },
+      });
+
+      if (!employee) {
+        errors.push({ row: rowNum, nik, error: `NIK "${nik}" tidak ditemukan dalam sistem.` });
+        continue;
+      }
+
+      // 2. Validate leave type
+      const leaveTypeRaw = String(row.leaveType ?? "").trim().toUpperCase() as LeaveType;
+      if (!VALID_LEAVE_TYPES.includes(leaveTypeRaw)) {
+        errors.push({ row: rowNum, nik, error: `Jenis cuti "${row.leaveType}" tidak valid.` });
+        continue;
+      }
+
+      // 3. Validate dates
+      const startDate = new Date(row.startDate);
+      const endDate = new Date(row.endDate);
+
+      if (isNaN(startDate.getTime())) {
+        errors.push({ row: rowNum, nik, error: `Format tanggal mulai tidak valid: "${row.startDate}".` });
+        continue;
+      }
+      if (isNaN(endDate.getTime())) {
+        errors.push({ row: rowNum, nik, error: `Format tanggal selesai tidak valid: "${row.endDate}".` });
+        continue;
+      }
+      if (startDate > endDate) {
+        errors.push({ row: rowNum, nik, error: "Tanggal mulai tidak boleh setelah tanggal selesai." });
+        continue;
+      }
+
+      // 4. Validate total days
+      const totalDays = Number(row.totalDays);
+      if (isNaN(totalDays) || totalDays <= 0) {
+        errors.push({ row: rowNum, nik, error: `Total hari tidak valid: "${row.totalDays}".` });
+        continue;
+      }
+
+      // 5. Find annual quota if CUTI_TAHUNAN
+      let annualQuotaId: string | null = null;
+      if (leaveTypeRaw === "CUTI_TAHUNAN") {
+        const quota =
+          (await prisma.annualLeaveQuota.findFirst({
+            where: {
+              userId: employee.id,
+              cycleStart: { lte: startDate },
+              cycleEnd: { gte: startDate },
+            },
+          })) ||
+          (await prisma.annualLeaveQuota.findFirst({
+            where: { userId: employee.id },
+            orderBy: { cycleStart: "desc" },
+          }));
+
+        if (quota) {
+          annualQuotaId = quota.id;
+        }
+        // If no quota found, we still allow import (admin importing old data may not have quota set up)
+      }
+
+      validRows.push({
+        userId: employee.id,
+        leaveType: leaveTypeRaw,
+        startDate,
+        endDate,
+        totalDays,
+        annualQuotaId,
+      });
+    }
+
+    // Server-side hard gate: if any row errored, abort
+    if (errors.length > 0) {
+      return {
+        results: {
+          successCount: 0,
+          failedCount: errors.length,
+          errors,
+        },
+      };
+    }
+
+    // Create all records in a single transaction
+    let successCount = 0;
+    const transactionErrors: ImportLeaveError[] = [];
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of validRows) {
+        const request = await tx.leaveRequest.create({
+          data: {
+            userId: row.userId,
+            reason: "Impor data historis",
+            status: RequestStatus.APPROVED,
+            reviewedById: session.user.id,
+            reviewedAt: new Date(),
+          },
+        });
+
+        await tx.leaveSegment.create({
+          data: {
+            leaveRequestId: request.id,
+            leaveType: row.leaveType,
+            startDate: row.startDate,
+            endDate: row.endDate,
+            totalDays: row.totalDays,
+            annualQuotaId: row.annualQuotaId,
+          },
+        });
+
+        successCount++;
+      }
+    });
+
+    revalidatePath("/riwayat-tahunan");
+    revalidatePath("/karyawan");
+    revalidatePath("/dashboard");
+
+    return {
+      results: {
+        successCount,
+        failedCount: transactionErrors.length,
+        errors: transactionErrors,
+      },
+    };
+  } catch (error: any) {
+    console.error("Error importing leave history:", error);
+    return { error: "Terjadi kesalahan server saat mengimpor data riwayat." };
+  }
+}

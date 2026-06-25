@@ -10,6 +10,7 @@ import {
   Calendar,
   Settings,
   LogOut,
+  History,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 
@@ -49,6 +50,12 @@ const navItems: NavItem[] = [
     href: "/kuota-tahunan",
     label: "Kuota Cuti Tahunan",
     icon: <Calendar size={18} />,
+    roles: ["SUPERADMIN", "ADMIN"],
+  },
+  {
+    href: "/riwayat-tahunan",
+    label: "Riwayat Tahunan",
+    icon: <History size={18} />,
     roles: ["SUPERADMIN", "ADMIN"],
   },
   {

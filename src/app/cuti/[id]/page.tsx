@@ -7,7 +7,7 @@ import { LeaveReviewPanel } from "@/components/features/leave/LeaveReviewPanel";
 import { Calendar, User, FileText, ArrowLeft, Download, CheckCircle, Clock, XCircle, Building, Mail } from "lucide-react";
 import Link from "next/link";
 import { PrintButton } from "@/components/layout/PrintButton";
-import { DownloadDocxButton } from "@/components/layout/DownloadDocxButton";
+import { ExportPdfButton } from "@/components/layout/ExportPdfButton";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -69,6 +69,7 @@ export default async function LeaveDetailPage({ params }: PageProps) {
           subCompany: {
             select: {
               name: true,
+              code: true,
             },
           },
         },
@@ -117,7 +118,7 @@ export default async function LeaveDetailPage({ params }: PageProps) {
             </Link>
             <div style={{ display: "flex", gap: 8 }}>
               <PrintButton />
-              <DownloadDocxButton data={JSON.parse(JSON.stringify(leave))} reviewerName={reviewerName} />
+              <ExportPdfButton leave={JSON.parse(JSON.stringify(leave))} userId={leave.userId} />
             </div>
           </div>
 

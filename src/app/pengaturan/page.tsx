@@ -55,6 +55,34 @@ export default async function SettingsPage() {
     orderBy: { name: "asc" },
   });
 
+  // Fetch all active KARYAWAN users for hierarchy management
+  const karyawanList = await prisma.user.findMany({
+    where: {
+      role: "KARYAWAN",
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      level: true,
+      department: true,
+      lokasiKerja: true,
+      atasanId: true,
+      subCompanyId: true,
+      atasan: {
+        select: {
+          name: true,
+        },
+      },
+      subCompany: {
+        select: {
+          name: true,
+        },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+
   return (
     <PageWrapper title="Pengaturan Sistem">
       <SettingsPageClient
@@ -65,6 +93,7 @@ export default async function SettingsPage() {
         subCompanies={subCompanies.map((sc) => ({
           id: sc.id,
           name: sc.name,
+          code: sc.code,
           createdAt: sc.createdAt.toISOString(),
         }))}
         holidays={holidays.map((h) => ({
@@ -80,6 +109,17 @@ export default async function SettingsPage() {
           username: user.username,
           role: user.role,
           isActive: user.isActive,
+        }))}
+        karyawanList={karyawanList.map((emp) => ({
+          id: emp.id,
+          name: emp.name,
+          level: emp.level,
+          department: emp.department,
+          lokasiKerja: emp.lokasiKerja,
+          atasanId: emp.atasanId,
+          atasanName: emp.atasan?.name ?? null,
+          subCompanyId: emp.subCompanyId,
+          subCompanyName: emp.subCompany?.name ?? null,
         }))}
       />
     </PageWrapper>
