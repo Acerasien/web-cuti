@@ -21,6 +21,9 @@ interface LeaveData {
     level: string | null;
     lokasiKerja: string | null;
     namaAtasan: string | null;
+    atasan: {
+      position: string | null;
+    } | null;
     subCompany: {
       name: string;
       code: string | null;
@@ -32,7 +35,9 @@ interface LeaveData {
 interface LeavePdfTemplateProps {
   leave: LeaveData;
   disetujuiName: string;
+  disetujuiPosition: string;
   diterimaName: string;
+  diterimaPosition: string;
   exportDate: string;
 }
 
@@ -268,13 +273,13 @@ const styles = StyleSheet.create({
     fontSize: 8,
     textAlign: "center",
   },
-  sigDateCell: {
+  sigPositionCell: {
     padding: 4,
     alignItems: "center",
     justifyContent: "center",
     minHeight: 18,
   },
-  sigDateText: {
+  sigPositionText: {
     fontSize: 7.5,
     textAlign: "center",
   },
@@ -283,7 +288,9 @@ const styles = StyleSheet.create({
 export function LeavePdfTemplate({
   leave,
   disetujuiName,
+  disetujuiPosition,
   diterimaName,
+  diterimaPosition,
   exportDate,
 }: LeavePdfTemplateProps) {
   const totalDays = leave.segments.reduce(
@@ -436,8 +443,8 @@ export function LeavePdfTemplate({
             <View style={styles.sigNameCell}>
               <Text style={styles.sigNameText}>{leave.user.name}</Text>
             </View>
-            <View style={styles.sigDateCell}>
-              <Text style={styles.sigDateText}>{exportDate}</Text>
+            <View style={styles.sigPositionCell}>
+              <Text style={styles.sigPositionText}>{leave.user.position || "—"}</Text>
             </View>
           </View>
 
@@ -452,8 +459,10 @@ export function LeavePdfTemplate({
                 {leave.user.namaAtasan || "Atasan Langsung"}
               </Text>
             </View>
-            <View style={styles.sigDateCell}>
-              <Text style={styles.sigDateText}>{exportDate}</Text>
+            <View style={styles.sigPositionCell}>
+              <Text style={styles.sigPositionText}>
+                {leave.user.atasan?.position || "—"}
+              </Text>
             </View>
           </View>
 
@@ -466,8 +475,8 @@ export function LeavePdfTemplate({
             <View style={styles.sigNameCell}>
               <Text style={styles.sigNameText}>{disetujuiName}</Text>
             </View>
-            <View style={styles.sigDateCell}>
-              <Text style={styles.sigDateText}>{exportDate}</Text>
+            <View style={styles.sigPositionCell}>
+              <Text style={styles.sigPositionText}>{disetujuiPosition}</Text>
             </View>
           </View>
 
@@ -480,8 +489,8 @@ export function LeavePdfTemplate({
             <View style={styles.sigNameCell}>
               <Text style={styles.sigNameText}>{diterimaName}</Text>
             </View>
-            <View style={styles.sigDateCell}>
-              <Text style={styles.sigDateText}>{exportDate}</Text>
+            <View style={styles.sigPositionCell}>
+              <Text style={styles.sigPositionText}>{diterimaPosition}</Text>
             </View>
           </View>
         </View>

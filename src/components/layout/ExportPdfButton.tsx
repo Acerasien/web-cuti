@@ -34,6 +34,9 @@ interface LeaveData {
     level: string | null;
     lokasiKerja: string | null;
     namaAtasan: string | null;
+    atasan: {
+      position: string | null;
+    } | null;
     subCompany: {
       name: string;
       code: string | null;
@@ -114,7 +117,9 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
         const selectedDiterima = diterimaList.find((u) => u.id === selectedDiterimaId);
 
         const disetujuiName = selectedDisetujui?.name || "—";
+        const disetujuiPosition = selectedDisetujui?.position || "—";
         const diterimaName = selectedDiterima?.name || "—";
+        const diterimaPosition = selectedDiterima?.position || "—";
 
         const formattedToday = new Date().toLocaleDateString("id-ID", {
           day: "numeric",
@@ -126,7 +131,9 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
           <LeavePdfTemplate
             leave={leave}
             disetujuiName={disetujuiName}
+            disetujuiPosition={disetujuiPosition}
             diterimaName={diterimaName}
+            diterimaPosition={diterimaPosition}
             exportDate={formattedToday}
           />
         );
@@ -170,7 +177,9 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
       const selectedDiterima = diterimaList.find((u) => u.id === selectedDiterimaId);
 
       const disetujuiName = selectedDisetujui?.name || "—";
+      const disetujuiPosition = selectedDisetujui?.position || "—";
       const diterimaName = selectedDiterima?.name || "—";
+      const diterimaPosition = selectedDiterima?.position || "—";
 
       const formattedToday = new Date().toLocaleDateString("id-ID", {
         day: "numeric",
@@ -182,7 +191,9 @@ export function ExportPdfButton({ leave, userId }: ExportPdfButtonProps) {
         <LeavePdfTemplate
           leave={leave}
           disetujuiName={disetujuiName}
+          disetujuiPosition={disetujuiPosition}
           diterimaName={diterimaName}
+          diterimaPosition={diterimaPosition}
           exportDate={formattedToday}
         />
       );

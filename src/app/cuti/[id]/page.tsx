@@ -66,6 +66,11 @@ export default async function LeaveDetailPage({ params }: PageProps) {
           level: true,
           lokasiKerja: true,
           namaAtasan: true,
+          atasan: {
+            select: {
+              position: true,
+            },
+          },
           subCompany: {
             select: {
               name: true,
