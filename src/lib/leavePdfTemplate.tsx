@@ -85,11 +85,17 @@ const styles = StyleSheet.create({
     height: 40,
     width: "auto",
   },
+  logoImageRight: {
+    height: 20,
+    width: "auto",
+  },
   titleText: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 12,
-    textAlign: "right",
-    maxWidth: "60%",
+    fontSize: 11,
+    textAlign: "center",
+    flex: 1,
+    marginLeft: 10,
+    marginRight: 10,
     lineHeight: 1.3,
   },
   headerDivider: {
@@ -218,7 +224,7 @@ const styles = StyleSheet.create({
     borderColor: "#000000",
     padding: 8,
     minHeight: 50,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   reasonTitle: {
     fontFamily: "Helvetica-Bold",
@@ -230,6 +236,19 @@ const styles = StyleSheet.create({
     fontSize: 8.5,
     color: "#000000",
     lineHeight: 1.3,
+  },
+  notesContainer: {
+    borderWidth: 1.5,
+    borderColor: "#000000",
+    padding: 8,
+    minHeight: 125,
+    marginBottom: 20,
+  },
+  notesTitle: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 8.5,
+    color: "#334155",
+    marginBottom: 4,
   },
   signaturesContainer: {
     position: "absolute",
@@ -318,6 +337,10 @@ export function LeavePdfTemplate({
           <Text style={styles.titleText}>
             FORMULIR CUTI / IJIN TIDAK MASUK KERJA
           </Text>
+          <Image
+            src="/logo-h.png"
+            style={styles.logoImageRight}
+          />
         </View>
         <View style={styles.headerDivider} />
 
@@ -434,6 +457,11 @@ export function LeavePdfTemplate({
         <View style={styles.reasonContainer}>
           <Text style={styles.reasonTitle}>Alasan / Keterangan Penjelasan:</Text>
           <Text style={styles.reasonText}>{leave.reason || "—"}</Text>
+        </View>
+
+        {/* Additional Notes Box */}
+        <View style={styles.notesContainer}>
+          <Text style={styles.notesTitle}>Catatan Tambahan:</Text>
         </View>
 
         {/* Signatures Grid */}

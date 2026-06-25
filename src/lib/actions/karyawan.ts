@@ -395,7 +395,7 @@ export async function getKaryawanRemainingQuota(userId: string) {
       },
     });
 
-    const remainingDays = Math.max(0, accruedDays - usedDays - cutiBersamaCount);
+    const remainingDays = accruedDays - usedDays - cutiBersamaCount;
 
     return {
       quota: {

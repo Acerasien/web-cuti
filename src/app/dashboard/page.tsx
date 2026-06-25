@@ -133,7 +133,7 @@ export default async function DashboardPage() {
         },
       });
 
-      remainingCuti = Math.max(0, accruedCuti - usedCuti - cutiBersamaCount);
+      remainingCuti = accruedCuti - usedCuti - cutiBersamaCount;
 
       const cycleEndDate = new Date(activeQuota.cycleEnd);
       const diffTime = cycleEndDate.getTime() - now.getTime();
@@ -395,7 +395,7 @@ export default async function DashboardPage() {
                         <div
                           className={`quota-bar-fill ${remainingCuti <= 2 ? "danger" : remainingCuti <= 4 ? "warning" : ""}`}
                           style={{
-                            width: `${accruedCuti > 0 ? (remainingCuti / accruedCuti) * 100 : 0}%`,
+                            width: `${accruedCuti > 0 ? Math.max(0, (remainingCuti / accruedCuti) * 100) : 0}%`,
                             background: remainingCuti <= 2 ? "var(--color-danger)" : remainingCuti <= 4 ? "var(--color-warning)" : "var(--color-primary)",
                           }}
                         ></div>

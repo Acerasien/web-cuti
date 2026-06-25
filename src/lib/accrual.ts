@@ -1,10 +1,10 @@
 /**
- * Calculates the accrued annual leave days under Model A (Month-Started Accrual)
+ * Calculates the accrued annual leave days under Completed Month Accrual
  * from the cycle start date to the target date.
  *
  * Rule:
- * - Day 1 of the cycle: 1 day is immediately accrued (Month 1 started).
- * - Every completed month anniversary: +1 day accrued (Month N started).
+ * - Day 1 of the cycle: 0 days are accrued (wait until 1 month is completed).
+ * - Every completed month anniversary: +1 day accrued (Month N completed).
  * - Capped at the cycle's total limit (default: 12 days).
  */
 export function getAccruedQuotaDays(
@@ -37,9 +37,8 @@ export function getAccruedQuotaDays(
     monthsElapsed--;
   }
 
-  // Month-Started logic: elapsed months + 1
-  const monthsStarted = Math.max(0, monthsElapsed) + 1;
+  const accrued = Math.max(0, monthsElapsed);
 
   // Cap at the cycle total limit
-  return Math.min(totalDaysLimit, monthsStarted);
+  return Math.min(totalDaysLimit, accrued);
 }

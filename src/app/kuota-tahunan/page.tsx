@@ -83,7 +83,7 @@ export default async function QuotaManagementPage() {
         (h) => h.date >= activeQuota.cycleStart && h.date <= now
       ).length;
 
-      remainingDays = Math.max(0, accruedDays - usedDays - cycleCutiBersama);
+      remainingDays = accruedDays - usedDays - cycleCutiBersama;
 
       const timeDiff = activeQuota.cycleEnd.getTime() - now.getTime();
       daysToExpiry = Math.ceil(timeDiff / (1000 * 3600 * 24));

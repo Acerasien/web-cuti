@@ -41,7 +41,7 @@ async function getRemainingQuotaForCycle(
     },
   });
 
-  return Math.max(0, accruedDays - usedDays - cutiBersamaCount);
+  return accruedDays - usedDays - cutiBersamaCount;
 }
 
 export async function createLeaveRequest(prevState: any, formData: FormData) {

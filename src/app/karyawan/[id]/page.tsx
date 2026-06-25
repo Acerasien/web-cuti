@@ -164,7 +164,7 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
     ).length;
 
     const accrued = getAccruedQuotaDays(quota.cycleStart, quota.totalDays, now);
-    const remaining = Math.max(0, accrued - cycleApproved - cycleCutiBersama);
+    const remaining = accrued - cycleApproved - cycleCutiBersama;
     const isExpired = quota.cycleEnd < now;
 
     return {
@@ -199,7 +199,42 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
       typeLabels,
       dateRangeStr,
       totalDays,
+      isCutiBersama: false,
     };
+  });
+
+  // Fetch Cuti Bersama holidays that occurred on or after the employee's join date
+  const cutiBersamaHolidaysForHistory = await prisma.holiday.findMany({
+    where: {
+      isCutiBersama: true,
+      date: {
+        gte: employee.joinDate,
+      },
+    },
+    orderBy: { date: "desc" },
+  });
+
+  const cutiBersamaHistoryRows = cutiBersamaHolidaysForHistory.map((h) => {
+    return {
+      id: `cb-${h.id}`,
+      typeLabels: `Cuti Bersama - ${h.description}`,
+      dateRangeStr: new Date(h.date).toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+      totalDays: 1,
+      status: "SYSTEM",
+      createdAt: h.date,
+      isCutiBersama: true,
+    };
+  });
+
+  const combinedHistory = [
+    ...requestHistory,
+    ...cutiBersamaHistoryRows,
+  ].sort((a, b) => {
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
   return (
@@ -282,7 +317,7 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
             <div className="card-outer">
               <div className="card-inner">
                 <h3 className="card-title mb-4">Riwayat Pengajuan Cuti & Izin Terbaru</h3>
-                {requestHistory.length === 0 ? (
+                {combinedHistory.length === 0 ? (
                   <p className="text-muted text-sm">Belum ada riwayat pengajuan cuti atau izin.</p>
                 ) : (
                   <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
@@ -297,13 +332,23 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
                         </tr>
                       </thead>
                       <tbody>
-                        {requestHistory.map((req) => (
+                        {combinedHistory.map((req) => (
                           <tr key={req.id}>
                             <td style={{ fontWeight: 600 }}>{req.typeLabels}</td>
                             <td>{req.dateRangeStr}</td>
                             <td>{req.totalDays} Hari</td>
-                            <td><span className={`badge badge-${req.status.toLowerCase()}`}>{req.status}</span></td>
-                            <td><Link href={`/cuti/${req.id}`} className="text-primary font-semibold">Lihat</Link></td>
+                            <td>
+                              <span className={`badge ${req.isCutiBersama ? 'badge-neutral' : `badge-${req.status.toLowerCase()}`}`}>
+                                {req.status}
+                              </span>
+                            </td>
+                            <td>
+                              {req.isCutiBersama ? (
+                                <span className="text-muted">—</span>
+                              ) : (
+                                <Link href={`/cuti/${req.id}`} className="text-primary font-semibold">Lihat</Link>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

@@ -77,7 +77,47 @@ export default async function LeaveListPage() {
       typeLabels,
       dateRangeStr,
       totalDays,
+      isCutiBersama: false,
     };
+  });
+
+  // If Karyawan, merge in their Cuti Bersama history
+  let cutiBersamaRows: any[] = [];
+  if (!isAdmin) {
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { joinDate: true },
+    });
+
+    if (user && user.joinDate) {
+      const cutiBersamaHolidays = await prisma.holiday.findMany({
+        where: {
+          isCutiBersama: true,
+          date: { gte: user.joinDate },
+        },
+      });
+
+      cutiBersamaRows = cutiBersamaHolidays.map((h) => ({
+        id: `cb-${h.id}`,
+        typeLabels: `Cuti Bersama - ${h.description}`,
+        dateRangeStr: new Date(h.date).toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }),
+        totalDays: 1,
+        status: "SYSTEM",
+        createdAt: h.date,
+        isCutiBersama: true,
+      }));
+    }
+  }
+
+  const combinedLeaves = [
+    ...processedLeaves,
+    ...cutiBersamaRows,
+  ].sort((a, b) => {
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
   return (
@@ -103,7 +143,7 @@ export default async function LeaveListPage() {
         {/* List Table */}
         <div className="card-outer">
           <div className="card-inner" style={{ padding: 0 }}>
-            {processedLeaves.length === 0 ? (
+            {combinedLeaves.length === 0 ? (
               <div className="empty-state">
                 <CalendarOff />
                 <div className="empty-state-title">Belum ada pengajuan cuti atau izin</div>
@@ -124,14 +164,14 @@ export default async function LeaveListPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {processedLeaves.map((leave) => (
+                    {combinedLeaves.map((leave) => (
                       <tr key={leave.id}>
                         {isAdmin && (
                           <td>
                             <div className="flex flex-col">
-                              <span style={{ fontWeight: 600 }}>{leave.user.name}</span>
+                              <span style={{ fontWeight: 600 }}>{leave.user?.name}</span>
                               <span className="text-xs text-muted">
-                                {leave.user.department || "No Dept"}
+                                {leave.user?.department || "No Dept"}
                               </span>
                             </div>
                           </td>
@@ -146,7 +186,7 @@ export default async function LeaveListPage() {
                           <span style={{ fontWeight: 600 }}>{leave.totalDays} Hari</span>
                         </td>
                         <td>
-                          <span className={`badge badge-${leave.status.toLowerCase()}`}>
+                          <span className={`badge ${leave.isCutiBersama ? 'badge-neutral' : `badge-${leave.status.toLowerCase()}`}`}>
                             {leave.status}
                           </span>
                         </td>
@@ -154,9 +194,13 @@ export default async function LeaveListPage() {
                           <span className="text-muted text-sm">{formatDate(leave.createdAt)}</span>
                         </td>
                         <td>
-                          <Link href={`/cuti/${leave.id}`} className="btn btn-ghost btn-sm" style={{ padding: "0 8px", minHeight: 32, gap: 4 }}>
-                            <Eye size={14} /> Detail
-                          </Link>
+                          {leave.isCutiBersama ? (
+                            <span className="text-muted" style={{ padding: "0 8px" }}>—</span>
+                          ) : (
+                            <Link href={`/cuti/${leave.id}`} className="btn btn-ghost btn-sm" style={{ padding: "0 8px", minHeight: 32, gap: 4 }}>
+                              <Eye size={14} /> Detail
+                            </Link>
+                          )}
                         </td>
                       </tr>
                     ))}

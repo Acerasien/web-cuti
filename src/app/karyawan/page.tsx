@@ -93,7 +93,7 @@ export default async function KaryawanListPage() {
       ).length;
 
       const accrued = getAccruedQuotaDays(activeQuota.cycleStart, activeQuota.totalDays, now);
-      const remaining = Math.max(0, accrued - cycleApproved - cycleCutiBersama);
+      const remaining = accrued - cycleApproved - cycleCutiBersama;
       quotaText = `${accrued} / ${activeQuota.totalDays} H`;
       balanceText = `${remaining} H`;
     }
