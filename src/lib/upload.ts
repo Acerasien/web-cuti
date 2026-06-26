@@ -19,7 +19,19 @@ export async function uploadFile(file: File | null): Promise<string | null> {
     fs.mkdirSync(uploadDir, { recursive: true });
   }
 
-  const fileExt = path.extname(file.name);
+  // Validate file size (max 5MB)
+  const maxFileSize = 5 * 1024 * 1024;
+  if (file.size > maxFileSize) {
+    throw new Error("Ukuran file melebihi batas 5MB.");
+  }
+
+  // Validate file extension
+  const allowedExtensions = [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"];
+  const fileExt = path.extname(file.name).toLowerCase();
+  if (!allowedExtensions.includes(fileExt)) {
+    throw new Error("Format file tidak didukung. Gunakan PDF, JPG, JPEG, PNG, DOC, atau DOCX.");
+  }
+
   const uniqueName = `${crypto.randomUUID()}${fileExt}`;
 
   const filePath = path.join(uploadDir, uniqueName);

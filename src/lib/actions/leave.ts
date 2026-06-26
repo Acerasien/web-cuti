@@ -41,7 +41,17 @@ async function getRemainingQuotaForCycle(
     },
   });
 
-  return accruedDays - usedDays - cutiBersamaCount;
+  // Sum annual leave adjustments for this cycle
+  const adj = await prisma.leaveAdjustment.aggregate({
+    _sum: { days: true },
+    where: {
+      quotaId,
+      userId,
+    },
+  });
+  const adjustmentTotal = Number(adj._sum.days || 0);
+
+  return accruedDays - usedDays - cutiBersamaCount + adjustmentTotal;
 }
 
 export async function createLeaveRequest(prevState: any, formData: FormData) {
@@ -194,7 +204,11 @@ export async function createLeaveRequest(prevState: any, formData: FormData) {
     // Handle file upload
     let attachmentUrl: string | null = null;
     if (file && file.size > 0) {
-      attachmentUrl = await uploadFile(file);
+      try {
+        attachmentUrl = await uploadFile(file);
+      } catch (uploadErr: any) {
+        return { error: uploadErr.message || "Gagal mengunggah file." };
+      }
     }
 
     // Insert leave request and segments in a transaction
@@ -318,6 +332,12 @@ export async function getBookedLeaveDates(userId: string): Promise<string[]> {
   try {
     const session = await getServerSession(authOptions);
     if (!session) {
+      return [];
+    }
+
+    const currentUserId = session.user.id;
+    const isAdmin = session.user.role === "ADMIN" || session.user.role === "SUPERADMIN";
+    if (!isAdmin && currentUserId !== userId) {
       return [];
     }
 

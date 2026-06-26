@@ -8,6 +8,8 @@ import { KaryawanForm } from "@/components/features/karyawan/KaryawanForm";
 import { KaryawanQuotaPanel } from "@/components/features/karyawan/KaryawanQuotaPanel";
 import { User, Calendar, Settings, Shield, Edit2, CalendarOff, ClipboardList, CheckCircle, Clock, XCircle, FileText, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { buildLedgerTimeline } from "@/lib/ledger";
+import { LeaveLedgerTimeline } from "@/components/features/ledger/LeaveLedgerTimeline";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -72,6 +74,7 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
       annualQuotas: {
         orderBy: { cycleStart: "desc" },
       },
+      adjustments: true, // Fetch adjustments to calculate remaining days
       leaveRequests: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -163,8 +166,12 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
       (h) => h.date >= quota.cycleStart && h.date <= now
     ).length;
 
+    const cycleAdjustments = (employee.adjustments || [])
+      .filter((adj) => adj.quotaId === quota.id)
+      .reduce((sum, adj) => sum + Number(adj.days || 0), 0);
+
     const accrued = getAccruedQuotaDays(quota.cycleStart, quota.totalDays, now);
-    const remaining = accrued - cycleApproved - cycleCutiBersama;
+    const remaining = accrued - cycleApproved - cycleCutiBersama + cycleAdjustments;
     const isExpired = quota.cycleEnd < now;
 
     return {
@@ -172,12 +179,20 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
       accrued,
       used: cycleApproved,
       cutiBersama: cycleCutiBersama,
+      adjustmentsTotal: cycleAdjustments,
       remaining,
       isExpired,
     };
   });
 
   const activeQuota = quotaHistory.find((q) => q.cycleStart <= now && q.cycleEnd >= now) || quotaHistory[0];
+
+  const activeTab = resolvedSearchParams.tab === "ledger" ? "ledger" : "profile";
+
+  let ledgerTimeline = null;
+  if (activeQuota) {
+    ledgerTimeline = await buildLedgerTimeline(employee.id, activeQuota.id);
+  }
 
   const requestHistory = employee.leaveRequests.map((req) => {
     const startDates = req.segments.map((s) => new Date(s.startDate).getTime());
@@ -248,7 +263,53 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
         <div className="grid grid-3 gap-6">
           {/* Left Block: Profile Info & Request History (Spans 2 columns) */}
           <div style={{ gridColumn: "span 2" }} className="flex flex-col gap-6">
-            {/* Profile Detail */}
+            {/* Tab Navigation */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                borderBottom: "1px solid var(--color-border)",
+                paddingBottom: 4,
+                marginBottom: 4,
+              }}
+            >
+              <Link
+                href={`/karyawan/${employee.id}?tab=profile`}
+                className={`btn ${activeTab === "profile" ? "btn-primary" : "btn-ghost"}`}
+                style={{
+                  fontSize: "var(--text-xs)",
+                  height: 36,
+                  padding: "0 var(--space-4)",
+                  borderRadius: "var(--radius-md)",
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                Profil & Riwayat Cuti
+              </Link>
+              <Link
+                href={`/karyawan/${employee.id}?tab=ledger`}
+                className={`btn ${activeTab === "ledger" ? "btn-primary" : "btn-ghost"}`}
+                style={{
+                  fontSize: "var(--text-xs)",
+                  height: 36,
+                  padding: "0 var(--space-4)",
+                  borderRadius: "var(--radius-md)",
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                Linimasa Saldo (Ledger)
+              </Link>
+            </div>
+
+            {activeTab === "profile" ? (
+              <>
+                {/* Profile Detail */}
             <div className="card-outer">
               <div className="card-inner">
                 <div className="flex justify-between items-start mb-6">
@@ -357,6 +418,28 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
                 )}
               </div>
             </div>
+              </>
+            ) : activeQuota ? (
+              <LeaveLedgerTimeline
+                userId={employee.id}
+                quotaId={activeQuota.id}
+                entries={ledgerTimeline?.entries || []}
+                quota={{
+                  cycleStart: activeQuota.cycleStart,
+                  cycleEnd: activeQuota.cycleEnd,
+                  totalDays: activeQuota.totalDays,
+                }}
+                isAdmin={isAdmin}
+              />
+            ) : (
+              <div className="card-outer">
+                <div className="card-inner text-center py-8">
+                  <p className="text-muted text-sm">
+                    Karyawan ini belum memiliki siklus kuota cuti tahunan aktif. Silakan buat kuota baru terlebih dahulu.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Block: Quota Balance Info & Quota Settings (Spans 1 column) */}
@@ -389,6 +472,14 @@ export default async function KaryawanDetailPage({ params, searchParams }: PageP
                       <div className="text-[10px] text-muted flex justify-between" style={{ marginTop: 2, padding: "0 2px" }}>
                         <span>Potongan Cuti Bersama:</span>
                         <span className="font-semibold text-warning">{activeQuota.cutiBersama} Hari</span>
+                      </div>
+                    )}
+                    {activeQuota.adjustmentsTotal !== 0 && (
+                      <div className="text-[10px] text-muted flex justify-between" style={{ marginTop: 2, padding: "0 2px" }}>
+                        <span>Penyesuaian Saldo HR:</span>
+                        <span className={`font-semibold ${activeQuota.adjustmentsTotal > 0 ? "text-success" : "text-danger"}`}>
+                          {activeQuota.adjustmentsTotal > 0 ? `+${activeQuota.adjustmentsTotal}` : activeQuota.adjustmentsTotal} Hari
+                        </span>
                       </div>
                     )}
                     <div className="divider" style={{ margin: "4px 0" }} />

@@ -5,6 +5,11 @@ import { prisma } from "@/lib/prisma";
 // Import Role from Prisma Client
 import { Role } from "@prisma/client";
 
+// Brute-force protection: in-memory map tracking failed logins per email/username
+const LOGIN_ATTEMPTS = new Map<string, { count: number; lockUntil: number }>();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
+
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
@@ -22,6 +27,15 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Email/Username dan password wajib diisi");
         }
 
+        const identifier = credentials.email.toLowerCase().trim();
+        const now = Date.now();
+        const attempt = LOGIN_ATTEMPTS.get(identifier);
+
+        if (attempt && attempt.lockUntil > now) {
+          const remainingMin = Math.ceil((attempt.lockUntil - now) / 60000);
+          throw new Error(`Terlalu banyak percobaan masuk. Akun terkunci sementara. Silakan coba lagi dalam ${remainingMin} menit.`);
+        }
+
         const user = await prisma.user.findFirst({
           where: {
             OR: [
@@ -32,7 +46,16 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (!user) {
-          throw new Error("Email/Username atau password salah");
+          const currentAttempt = LOGIN_ATTEMPTS.get(identifier) || { count: 0, lockUntil: 0 };
+          currentAttempt.count += 1;
+          if (currentAttempt.count >= MAX_ATTEMPTS) {
+            currentAttempt.lockUntil = now + LOCKOUT_DURATION;
+            LOGIN_ATTEMPTS.set(identifier, currentAttempt);
+            throw new Error("Terlalu banyak percobaan masuk. Akun Anda dikunci selama 15 menit.");
+          } else {
+            LOGIN_ATTEMPTS.set(identifier, currentAttempt);
+            throw new Error(`Email/Username atau password salah. Sisa percobaan: ${MAX_ATTEMPTS - currentAttempt.count}`);
+          }
         }
 
         if (!user.isActive) {
@@ -45,8 +68,20 @@ export const authOptions: NextAuthOptions = {
         );
 
         if (!isPasswordValid) {
-          throw new Error("Email/Username atau password salah");
+          const currentAttempt = LOGIN_ATTEMPTS.get(identifier) || { count: 0, lockUntil: 0 };
+          currentAttempt.count += 1;
+          if (currentAttempt.count >= MAX_ATTEMPTS) {
+            currentAttempt.lockUntil = now + LOCKOUT_DURATION;
+            LOGIN_ATTEMPTS.set(identifier, currentAttempt);
+            throw new Error("Terlalu banyak percobaan masuk. Akun Anda dikunci selama 15 menit.");
+          } else {
+            LOGIN_ATTEMPTS.set(identifier, currentAttempt);
+            throw new Error(`Email/Username atau password salah. Sisa percobaan: ${MAX_ATTEMPTS - currentAttempt.count}`);
+          }
         }
+
+        // Reset attempts on successful login
+        LOGIN_ATTEMPTS.delete(identifier);
 
         return {
           id: user.id,

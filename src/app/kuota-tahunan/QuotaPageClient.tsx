@@ -199,11 +199,11 @@ export function QuotaPageClient({ initialEmployees }: QuotaPageClientProps) {
                 <thead>
                   <tr>
                     <th>Karyawan</th>
-                    <th>Dept / Jabatan</th>
+                    <th className="hide-under-lg">Dept / Jabatan</th>
                     <th>Siklus Kuota Aktif</th>
-                    <th style={{ textAlign: "center" }}>Total Kuota</th>
-                    <th style={{ textAlign: "center" }}>Akrual</th>
-                    <th style={{ textAlign: "center" }}>Terpakai</th>
+                    <th className="hide-under-lg" style={{ textAlign: "center" }}>Total Kuota</th>
+                    <th className="hide-under-lg" style={{ textAlign: "center" }}>Akrual</th>
+                    <th className="hide-under-lg" style={{ textAlign: "center" }}>Terpakai</th>
                     <th style={{ textAlign: "center" }}>Sisa Saldo</th>
                     <th>Status</th>
                     <th>Aksi</th>
@@ -240,10 +240,15 @@ export function QuotaPageClient({ initialEmployees }: QuotaPageClientProps) {
                               <span className="text-xs text-muted">
                                 {emp.email || (emp.username ? `@${emp.username}` : "—")}
                               </span>
+                              {(emp.position || emp.department) && (
+                                <span className="text-[10px] text-primary font-semibold show-under-lg" style={{ marginTop: 2 }}>
+                                  {emp.position || "Staff"}{emp.department ? ` (${emp.department})` : ""}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
-                        <td>
+                        <td className="hide-under-lg">
                           <div className="flex flex-col">
                             <span style={{ fontWeight: 500 }}>
                               {emp.position || "—"}
@@ -269,17 +274,24 @@ export function QuotaPageClient({ initialEmployees }: QuotaPageClientProps) {
                             </span>
                           )}
                         </td>
-                        <td style={{ textAlign: "center", fontWeight: 600 }}>
+                        <td className="hide-under-lg" style={{ textAlign: "center", fontWeight: 600 }}>
                           {emp.activeQuota ? `${emp.activeQuota.totalDays} Hari` : "—"}
                         </td>
-                        <td style={{ textAlign: "center", fontWeight: 600, color: "var(--color-text-muted)" }}>
+                        <td className="hide-under-lg" style={{ textAlign: "center", fontWeight: 600, color: "var(--color-text-muted)" }}>
                           {emp.activeQuota ? `${emp.accruedDays} Hari` : "—"}
                         </td>
-                        <td style={{ textAlign: "center", color: "var(--color-warning)", fontWeight: 600 }}>
+                        <td className="hide-under-lg" style={{ textAlign: "center", color: "var(--color-warning)", fontWeight: 600 }}>
                           {emp.activeQuota ? `${emp.usedDays} Hari` : "—"}
                         </td>
-                        <td style={{ textAlign: "center", color: "var(--color-primary)", fontWeight: 700 }}>
-                          {emp.activeQuota ? `${emp.remainingDays} Hari` : "—"}
+                        <td style={{ textAlign: "center" }}>
+                          <span style={{ color: "var(--color-primary)", fontWeight: 700, display: "block" }}>
+                            {emp.activeQuota ? `${emp.remainingDays} Hari` : "—"}
+                          </span>
+                          {emp.activeQuota && (
+                            <span className="text-[10px] text-muted show-under-lg" style={{ marginTop: 2, display: "block" }}>
+                              Tot: {emp.activeQuota.totalDays} | Akr: {emp.accruedDays} | Pakai: {emp.usedDays}
+                            </span>
+                          )}
                         </td>
                         <td>
                           {emp.activeQuota ? (

@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { PageWrapper } from "@/components/layout/PageWrapper";
 import { QuotaPageClient } from "./QuotaPageClient";
 import { getAccruedQuotaDays } from "@/lib/accrual";
+import { buildLedgerTimeline } from "@/lib/ledger";
+import { LeaveLedgerTimeline } from "@/components/features/ledger/LeaveLedgerTimeline";
 
 export const metadata = {
   title: "Kuota Cuti Tahunan — Web Cuti",
@@ -21,8 +23,58 @@ export default async function QuotaManagementPage() {
   const isAdmin =
     session.user.role === "ADMIN" || session.user.role === "SUPERADMIN";
 
+  const now = new Date();
+
   if (!isAdmin) {
-    redirect("/dashboard");
+    const userId = session.user.id;
+    // Fetch active quota cycle
+    let activeQuota = await prisma.annualLeaveQuota.findFirst({
+      where: {
+        userId,
+        cycleStart: { lte: now },
+        cycleEnd: { gte: now },
+      },
+    });
+
+    if (!activeQuota) {
+      activeQuota = await prisma.annualLeaveQuota.findFirst({
+        where: { userId },
+        orderBy: { cycleStart: "desc" },
+      });
+    }
+
+    let ledgerTimeline = null;
+    if (activeQuota) {
+      ledgerTimeline = await buildLedgerTimeline(userId, activeQuota.id);
+    }
+
+    return (
+      <PageWrapper title="Riwayat Saldo Cuti Tahunan">
+        <div style={{ maxWidth: "800px", margin: "0 auto" }} className="flex flex-col gap-6">
+          {activeQuota ? (
+            <LeaveLedgerTimeline
+              userId={userId}
+              quotaId={activeQuota.id}
+              entries={ledgerTimeline?.entries || []}
+              quota={{
+                cycleStart: activeQuota.cycleStart,
+                cycleEnd: activeQuota.cycleEnd,
+                totalDays: activeQuota.totalDays,
+              }}
+              isAdmin={false}
+            />
+          ) : (
+            <div className="card-outer">
+              <div className="card-inner text-center py-8">
+                <p className="text-muted text-sm">
+                  Anda belum memiliki jatah kuota cuti tahunan aktif. Silakan hubungi admin HR.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </PageWrapper>
+    );
   }
 
   // Fetch all employees (ADMIN or KARYAWAN) with their quotas and approved leave count
@@ -50,8 +102,6 @@ export default async function QuotaManagementPage() {
     },
     orderBy: { name: "asc" },
   });
-
-  const now = new Date();
 
   // Fetch Cuti Bersama holidays once to avoid N+1 query issue
   const cutiBersamaHolidays = await prisma.holiday.findMany({

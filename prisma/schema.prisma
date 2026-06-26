@@ -56,6 +56,8 @@ model User {
   reviewedLeaveRequests LeaveRequest[]  @relation("ReviewerLeaveRequests")
   annualQuotas         AnnualLeaveQuota[] @relation("UserQuotas")
   createdQuotas        AnnualLeaveQuota[] @relation("CreatorQuotas")
+  adjustments          LeaveAdjustment[] @relation("UserAdjustments")
+  createdAdjustments   LeaveAdjustment[] @relation("AdminAdjustments")
   subCompany           SubCompany?      @relation(fields: [subCompanyId], references: [id], onDelete: SetNull)
   atasan               User?            @relation("UserAtasan", fields: [atasanId], references: [id], onDelete: SetNull)
   bawahan              User[]           @relation("UserAtasan")
@@ -87,9 +89,10 @@ model AnnualLeaveQuota {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user      User           @relation("UserQuotas", fields: [userId], references: [id], onDelete: Restrict)
-  createdBy User           @relation("CreatorQuotas", fields: [createdById], references: [id], onDelete: Restrict)
-  segments  LeaveSegment[]
+  user        User           @relation("UserQuotas", fields: [userId], references: [id], onDelete: Restrict)
+  createdBy   User           @relation("CreatorQuotas", fields: [createdById], references: [id], onDelete: Restrict)
+  segments    LeaveSegment[]
+  adjustments LeaveAdjustment[]
 
   @@index([userId, cycleStart])
   @@map("annual_leave_quotas")
@@ -156,4 +159,25 @@ model Holiday {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("holidays")
+}
+
+model LeaveAdjustment {
+  id          String   @id @default(uuid())
+  quotaId     String   @map("quota_id")
+  userId      String   @map("user_id")
+  createdById String   @map("created_by")
+  days        Decimal  @db.Decimal(5, 1)       // signed: +2.0 credit, -1.0 deduction
+  reason      String
+  effectiveOn DateTime @map("effective_on") @db.Date
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  quota     AnnualLeaveQuota @relation(fields: [quotaId], references: [id], onDelete: Restrict)
+  user      User             @relation("UserAdjustments",  fields: [userId],      references: [id], onDelete: Restrict)
+  createdBy User             @relation("AdminAdjustments", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([quotaId])
+  @@index([userId])
+  @@index([effectiveOn])
+  @@map("leave_adjustments")
 }

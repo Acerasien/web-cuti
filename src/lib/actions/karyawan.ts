@@ -346,6 +346,12 @@ export async function getKaryawanRemainingQuota(userId: string) {
       return { error: "Sesi Anda telah berakhir." };
     }
 
+    const currentUserId = session.user.id;
+    const isAdmin = session.user.role === "ADMIN" || session.user.role === "SUPERADMIN";
+    if (!isAdmin && currentUserId !== userId) {
+      return { error: "Akses ditolak." };
+    }
+
     const now = new Date();
     // Find active quota cycle for user
     let activeQuota = await prisma.annualLeaveQuota.findFirst({
@@ -776,7 +782,7 @@ export async function importKaryawanAction(records: any[]) {
       } catch (rowError: any) {
         console.error(`Error importing row ${rowNum}:`, rowError);
         results.failedCount++;
-        results.errors.push({ row: rowNum, name: displayName, error: `Kesalahan database: ${rowError.message || "Gagal menyimpan data."}` });
+        results.errors.push({ row: rowNum, name: displayName, error: "Kesalahan database atau data tidak valid saat menyimpan data." });
       }
     }
 

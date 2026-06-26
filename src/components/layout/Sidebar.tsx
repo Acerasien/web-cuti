@@ -50,7 +50,7 @@ const navItems: NavItem[] = [
     href: "/kuota-tahunan",
     label: "Kuota Cuti Tahunan",
     icon: <Calendar size={18} />,
-    roles: ["SUPERADMIN", "ADMIN"],
+    roles: ["SUPERADMIN", "ADMIN", "KARYAWAN"],
   },
   {
     href: "/riwayat-tahunan",
