@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   History,
+  ShieldCheck,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 
@@ -62,6 +63,12 @@ const navItems: NavItem[] = [
     href: "/pengaturan",
     label: "Pengaturan",
     icon: <Settings size={18} />,
+    roles: ["SUPERADMIN"],
+  },
+  {
+    href: "/superadmin/audit-logs",
+    label: "Audit Logs",
+    icon: <ShieldCheck size={18} />,
     roles: ["SUPERADMIN"],
   },
 ];

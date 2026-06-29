@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 // Import Role from Prisma Client
 import { Role } from "@prisma/client";
+import { logAuditEvent } from "@/lib/audit";
 
 // Brute-force protection: in-memory map tracking failed logins per email/username
 const LOGIN_ATTEMPTS = new Map<string, { count: number; lockUntil: number }>();
@@ -46,6 +47,11 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (!user) {
+          await logAuditEvent({
+            actionType: "LOGIN_FAILURE",
+            description: `Failed login attempt for identifier: ${identifier} (User not found)`,
+          });
+
           const currentAttempt = LOGIN_ATTEMPTS.get(identifier) || { count: 0, lockUntil: 0 };
           currentAttempt.count += 1;
           if (currentAttempt.count >= MAX_ATTEMPTS) {
@@ -59,6 +65,12 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!user.isActive) {
+          await logAuditEvent({
+            actionType: "LOGIN_FAILURE",
+            description: `Failed login attempt: Account for ${user.name} (${identifier}) is inactive`,
+            targetId: user.id,
+            targetName: user.name,
+          });
           throw new Error("Akun Anda tidak aktif. Hubungi administrator.");
         }
 
@@ -68,6 +80,13 @@ export const authOptions: NextAuthOptions = {
         );
 
         if (!isPasswordValid) {
+          await logAuditEvent({
+            actionType: "LOGIN_FAILURE",
+            description: `Failed login attempt: Invalid password for user ${user.name} (${identifier})`,
+            targetId: user.id,
+            targetName: user.name,
+          });
+
           const currentAttempt = LOGIN_ATTEMPTS.get(identifier) || { count: 0, lockUntil: 0 };
           currentAttempt.count += 1;
           if (currentAttempt.count >= MAX_ATTEMPTS) {
@@ -82,6 +101,13 @@ export const authOptions: NextAuthOptions = {
 
         // Reset attempts on successful login
         LOGIN_ATTEMPTS.delete(identifier);
+
+        await logAuditEvent({
+          actionType: "LOGIN_SUCCESS",
+          description: `User ${user.name} logged in successfully`,
+          actorId: user.id,
+          actorName: user.name,
+        });
 
         return {
           id: user.id,

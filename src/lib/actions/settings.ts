@@ -5,6 +5,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { syncAllEmployeeQuotas } from "@/lib/quota";
+import { logAuditEvent } from "@/lib/audit";
+import bcrypt from "bcryptjs";
 
 // Manage global settings
 export async function updateCompanySettings(formData: FormData) {
@@ -36,12 +38,29 @@ export async function updateCompanySettings(formData: FormData) {
           defaultAnnualDays,
         },
       });
+
+      await logAuditEvent({
+        actionType: "SETTING_UPDATE",
+        description: `Updated global company settings: ${companyName.trim()}`,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        beforeState: { companyName: setting.companyName, defaultAnnualDays: setting.defaultAnnualDays },
+        afterState: { companyName: companyName.trim(), defaultAnnualDays },
+      });
     } else {
       await prisma.companySetting.create({
         data: {
           companyName: companyName.trim(),
           defaultAnnualDays,
         },
+      });
+
+      await logAuditEvent({
+        actionType: "SETTING_UPDATE",
+        description: `Initialized global company settings: ${companyName.trim()}`,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        afterState: { companyName: companyName.trim(), defaultAnnualDays },
       });
     }
 
@@ -77,8 +96,18 @@ export async function createSubCompany(prevState: any, formData: FormData) {
       return { error: "Unit Bisnis / Sub-Perusahaan dengan nama ini sudah terdaftar." };
     }
 
-    await prisma.subCompany.create({
+    const subCompany = await prisma.subCompany.create({
       data: { name: name.trim() },
+    });
+
+    await logAuditEvent({
+      actionType: "SUBCOMPANY_CREATE",
+      description: `Created new sub-company / business unit: ${name.trim()}`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: subCompany.id,
+      targetName: subCompany.name,
+      afterState: { name: name.trim() },
     });
 
     revalidatePath("/pengaturan");
@@ -106,8 +135,22 @@ export async function deleteSubCompany(id: string) {
       return { error: `Tidak dapat menghapus. Ada ${linkedUsers} karyawan yang masih terdaftar di Unit Bisnis ini.` };
     }
 
+    const existingSubComp = await prisma.subCompany.findUnique({
+      where: { id },
+    });
+
     await prisma.subCompany.delete({
       where: { id },
+    });
+
+    await logAuditEvent({
+      actionType: "SUBCOMPANY_DELETE",
+      description: `Deleted sub-company / business unit: ${existingSubComp?.name || "Unknown"}`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: id,
+      targetName: existingSubComp?.name,
+      beforeState: { name: existingSubComp?.name },
     });
 
     revalidatePath("/pengaturan");
@@ -149,12 +192,22 @@ export async function createHoliday(prevState: any, formData: FormData) {
       return { error: "Tanggal libur ini sudah terdaftar." };
     }
 
-    await prisma.holiday.create({
+    const holiday = await prisma.holiday.create({
       data: {
         date,
         description: description.trim(),
         isCutiBersama,
       },
+    });
+
+    await logAuditEvent({
+      actionType: "HOLIDAY_CREATE",
+      description: `Created new holiday: ${description.trim()} (${date.toLocaleDateString()})`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: holiday.id,
+      targetName: description.trim(),
+      afterState: { date, description: description.trim(), isCutiBersama },
     });
 
     revalidatePath("/pengaturan");
@@ -173,8 +226,22 @@ export async function deleteHoliday(id: string) {
       return { error: "Akses ditolak." };
     }
 
+    const existingHoliday = await prisma.holiday.findUnique({
+      where: { id },
+    });
+
     await prisma.holiday.delete({
       where: { id },
+    });
+
+    await logAuditEvent({
+      actionType: "HOLIDAY_DELETE",
+      description: `Deleted holiday: ${existingHoliday?.description || "Unknown"} (${existingHoliday?.date.toLocaleDateString() || "Unknown"})`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: id,
+      targetName: existingHoliday?.description,
+      beforeState: { date: existingHoliday?.date, description: existingHoliday?.description, isCutiBersama: existingHoliday?.isCutiBersama },
     });
 
     revalidatePath("/pengaturan");
@@ -227,10 +294,9 @@ export async function createAdminUser(prevState: any, formData: FormData) {
       if (existing) return { error: "Username sudah terdaftar." };
     }
 
-    const bcrypt = require("bcryptjs");
     const passwordHash = await bcrypt.hash(password, 12);
 
-    await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         name: name.trim(),
         email: emailTrim,
@@ -240,6 +306,16 @@ export async function createAdminUser(prevState: any, formData: FormData) {
         joinDate: new Date(),
         isActive: true,
       },
+    });
+
+    await logAuditEvent({
+      actionType: "USER_CREATE",
+      description: `Created new admin/superadmin user: ${name.trim()} (Role: ${role})`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: user.id,
+      targetName: user.name,
+      afterState: { name: name.trim(), email: emailTrim, username: usernameTrim, role },
     });
 
     revalidatePath("/pengaturan");
@@ -304,13 +380,27 @@ export async function updateAdminUser(userId: string, formData: FormData) {
     };
 
     if (password && password.trim() !== "") {
-      const bcrypt = require("bcryptjs");
       updateData.passwordHash = await bcrypt.hash(password, 12);
     }
+
+    const existingAdmin = await prisma.user.findUnique({
+      where: { id: userId },
+    });
 
     await prisma.user.update({
       where: { id: userId },
       data: updateData,
+    });
+
+    await logAuditEvent({
+      actionType: "USER_UPDATE",
+      description: `Updated administrator account: ${name.trim()} (Role: ${role})`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: userId,
+      targetName: name.trim(),
+      beforeState: existingAdmin ? { name: existingAdmin.name, email: existingAdmin.email, username: existingAdmin.username, role: existingAdmin.role, isActive: existingAdmin.isActive } : null,
+      afterState: { name: name.trim(), email: emailTrim, username: usernameTrim, role, isActive: isActiveInput === "true" },
     });
 
     revalidatePath("/pengaturan");
@@ -333,8 +423,22 @@ export async function deleteAdminUser(id: string) {
       return { error: "Anda tidak dapat menghapus akun Anda sendiri." };
     }
 
+    const existingAdmin = await prisma.user.findUnique({
+      where: { id },
+    });
+
     await prisma.user.delete({
       where: { id },
+    });
+
+    await logAuditEvent({
+      actionType: "USER_DELETE",
+      description: `Deleted administrator account: ${existingAdmin?.name || "Unknown"} (Role: ${existingAdmin?.role || "Unknown"})`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: id,
+      targetName: existingAdmin?.name,
+      beforeState: { name: existingAdmin?.name, email: existingAdmin?.email, role: existingAdmin?.role },
     });
 
     revalidatePath("/pengaturan");
@@ -353,6 +457,14 @@ export async function triggerManualQuotaSync() {
     }
 
     const cyclesCreated = await syncAllEmployeeQuotas(session.user.id);
+
+    await logAuditEvent({
+      actionType: "QUOTA_ROLLOVER",
+      description: `Manually triggered annual leave quota sync (Rolled over/created ${cyclesCreated} new cycles)`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      afterState: { cyclesCreated },
+    });
 
     revalidatePath("/karyawan");
     revalidatePath("/kuota-tahunan");
@@ -378,12 +490,33 @@ export async function assignEmployeesToSubCompanyAction(
       return { error: "Daftar ID karyawan tidak valid." };
     }
 
+    const targetSubCompany = subCompanyId
+      ? await prisma.subCompany.findUnique({ where: { id: subCompanyId }, select: { name: true } })
+      : null;
+
+    const employees = await prisma.user.findMany({
+      where: { id: { in: employeeIds } },
+      select: { name: true },
+    });
+
     await prisma.user.updateMany({
       where: {
         id: { in: employeeIds },
       },
       data: {
         subCompanyId,
+      },
+    });
+
+    await logAuditEvent({
+      actionType: "USER_UPDATE",
+      description: `Assigned ${employeeIds.length} employees to Unit Bisnis: ${targetSubCompany?.name || "None / Unassigned"}`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      afterState: {
+        subCompanyId,
+        subCompanyName: targetSubCompany?.name || "None",
+        employeeNames: employees.map((e) => e.name),
       },
     });
 

@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { logAuditEvent } from "@/lib/audit";
 
 // Guard helper to check if current user is admin
 async function checkAdminAccess() {
@@ -19,12 +20,12 @@ async function checkAdminAccess() {
     throw new Error("Anda tidak memiliki akses untuk melakukan tindakan ini.");
   }
   
-  return session.user.id;
+  return session.user;
 }
 
 export async function createAdjustment(prevState: any, formData: FormData) {
   try {
-    const adminId = await checkAdminAccess();
+    const admin = await checkAdminAccess();
 
     const quotaId = formData.get("quotaId") as string;
     const userId = formData.get("userId") as string;
@@ -59,11 +60,26 @@ export async function createAdjustment(prevState: any, formData: FormData) {
       data: {
         quotaId,
         userId,
-        createdById: adminId,
+        createdById: admin.id,
         days: new Prisma.Decimal(days),
         reason: reason.trim(),
         effectiveOn,
       },
+    });
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
+    await logAuditEvent({
+      actionType: "QUOTA_ADJUST",
+      description: `Created leave adjustment of ${days} days for ${targetUser?.name || "Unknown"} (Reason: ${reason.trim()})`,
+      actorId: admin.id,
+      actorName: admin.name,
+      targetId: userId,
+      targetName: targetUser?.name,
+      afterState: { days, reason: reason.trim(), effectiveOn },
     });
 
     revalidatePath(`/karyawan/${userId}`);
@@ -82,7 +98,7 @@ export async function createAdjustment(prevState: any, formData: FormData) {
 
 export async function updateAdjustment(prevState: any, formData: FormData) {
   try {
-    await checkAdminAccess();
+    const admin = await checkAdminAccess();
 
     const id = formData.get("id") as string;
     const daysStr = formData.get("days") as string;
@@ -120,6 +136,22 @@ export async function updateAdjustment(prevState: any, formData: FormData) {
       },
     });
 
+    const targetUser = await prisma.user.findUnique({
+      where: { id: existingAdjustment.userId },
+      select: { name: true },
+    });
+
+    await logAuditEvent({
+      actionType: "QUOTA_ADJUST",
+      description: `Updated leave adjustment for ${targetUser?.name || "Unknown"} (Previous: ${existingAdjustment.days} days, New: ${days} days)`,
+      actorId: admin.id,
+      actorName: admin.name,
+      targetId: existingAdjustment.userId,
+      targetName: targetUser?.name,
+      beforeState: { days: Number(existingAdjustment.days), reason: existingAdjustment.reason },
+      afterState: { days, reason: reason.trim(), effectiveOn },
+    });
+
     revalidatePath(`/karyawan/${existingAdjustment.userId}`);
     revalidatePath("/kuota-tahunan");
 
@@ -136,7 +168,7 @@ export async function updateAdjustment(prevState: any, formData: FormData) {
 
 export async function deleteAdjustment(id: string) {
   try {
-    await checkAdminAccess();
+    const admin = await checkAdminAccess();
 
     const existingAdjustment = await prisma.leaveAdjustment.findUnique({
       where: { id },
@@ -148,6 +180,21 @@ export async function deleteAdjustment(id: string) {
 
     await prisma.leaveAdjustment.delete({
       where: { id },
+    });
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: existingAdjustment.userId },
+      select: { name: true },
+    });
+
+    await logAuditEvent({
+      actionType: "QUOTA_ADJUST",
+      description: `Deleted leave adjustment of ${existingAdjustment.days} days for ${targetUser?.name || "Unknown"}`,
+      actorId: admin.id,
+      actorName: admin.name,
+      targetId: existingAdjustment.userId,
+      targetName: targetUser?.name,
+      beforeState: { days: Number(existingAdjustment.days), reason: existingAdjustment.reason },
     });
 
     revalidatePath(`/karyawan/${existingAdjustment.userId}`);

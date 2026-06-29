@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
 import { getAccruedQuotaDays } from "@/lib/accrual";
 import { isEligibleSupervisor } from "@/lib/hierarchy";
+import { logAuditEvent } from "@/lib/audit";
 
 export async function createKaryawanUser(prevState: any, formData: FormData) {
   try {
@@ -139,6 +140,16 @@ export async function createKaryawanUser(prevState: any, formData: FormData) {
       });
     }
 
+    await logAuditEvent({
+      actionType: "USER_CREATE",
+      description: `Created new employee user: ${name} (${nik || "No NIK"})`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: user.id,
+      targetName: user.name,
+      afterState: { name, email: emailTrim, username: usernameTrim, role: roleInput, nik, department, position, joinDate },
+    });
+
     revalidatePath("/karyawan");
     return { success: true };
   } catch (error: any) {
@@ -262,9 +273,40 @@ export async function updateKaryawanUser(userId: string, formData: FormData) {
       updateData.passwordHash = await bcrypt.hash(password, 12);
     }
 
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
     await prisma.user.update({
       where: { id: userId },
       data: updateData,
+    });
+
+    await logAuditEvent({
+      actionType: "USER_UPDATE",
+      description: `Updated employee user details for: ${name} (${nik || "No NIK"})`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: userId,
+      targetName: name,
+      beforeState: existingUser ? {
+        name: existingUser.name,
+        email: existingUser.email,
+        username: existingUser.username,
+        nik: existingUser.nik,
+        department: existingUser.department,
+        position: existingUser.position,
+        isActive: existingUser.isActive,
+      } : null,
+      afterState: {
+        name,
+        email: emailTrim,
+        username: usernameTrim,
+        nik: nik?.trim() || null,
+        department: department?.trim() || null,
+        position: position?.trim() || null,
+        isActive: isActiveInput === "true",
+      },
     });
 
     revalidatePath("/karyawan");
@@ -309,6 +351,11 @@ export async function upsertAnnualLeaveQuota(
       },
     });
 
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
     if (existingQuota) {
       await prisma.annualLeaveQuota.update({
         where: { id: existingQuota.id },
@@ -317,6 +364,17 @@ export async function upsertAnnualLeaveQuota(
           cycleEnd,
           createdById: session.user.id,
         },
+      });
+
+      await logAuditEvent({
+        actionType: "QUOTA_CREATE",
+        description: `Updated annual leave quota for ${targetUser?.name || "Unknown"} (Cycle: ${cycleStart.toLocaleDateString()} to ${cycleEnd.toLocaleDateString()})`,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        targetId: userId,
+        targetName: targetUser?.name,
+        beforeState: { totalDays: existingQuota.totalDays },
+        afterState: { totalDays },
       });
     } else {
       await prisma.annualLeaveQuota.create({
@@ -327,6 +385,16 @@ export async function upsertAnnualLeaveQuota(
           totalDays,
           createdById: session.user.id,
         },
+      });
+
+      await logAuditEvent({
+        actionType: "QUOTA_CREATE",
+        description: `Created new annual leave quota for ${targetUser?.name || "Unknown"} (Total: ${totalDays} days, Cycle: ${cycleStart.toLocaleDateString()} to ${cycleEnd.toLocaleDateString()})`,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        targetId: userId,
+        targetName: targetUser?.name,
+        afterState: { totalDays, cycleStart, cycleEnd },
       });
     }
 
@@ -454,6 +522,16 @@ export async function deleteKaryawanUser(userId: string) {
       prisma.annualLeaveQuota.deleteMany({ where: { userId } }),
       prisma.user.delete({ where: { id: userId } }),
     ]);
+
+    await logAuditEvent({
+      actionType: "USER_DELETE",
+      description: `Deleted employee user: ${userToDelete.name}`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: userId,
+      targetName: userToDelete.name,
+      beforeState: { name: userToDelete.name, role: userToDelete.role },
+    });
 
     revalidatePath("/karyawan");
     return { success: true };
@@ -786,6 +864,16 @@ export async function importKaryawanAction(records: any[]) {
       }
     }
 
+    if (results.successCount > 0) {
+      await logAuditEvent({
+        actionType: "USER_CREATE",
+        description: `Bulk imported ${results.successCount} employee records`,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        afterState: { successCount: results.successCount },
+      });
+    }
+
     revalidatePath("/karyawan");
     return { success: true, results };
   } catch (error: any) {
@@ -844,6 +932,21 @@ export async function assignSupervisorAction(employeeIds: string[], supervisorId
       successIds.push(emp.id);
     }
 
+    if (successIds.length > 0) {
+      const successfulEmployees = employees.filter((e) => successIds.includes(e.id));
+      await logAuditEvent({
+        actionType: "USER_UPDATE",
+        description: `Assigned supervisor ${supervisor.name} to ${successIds.length} employees`,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        afterState: {
+          supervisorId: supervisor.id,
+          supervisorName: supervisor.name,
+          employeeNames: successfulEmployees.map((e) => e.name),
+        },
+      });
+    }
+
     revalidatePath("/pengaturan");
     return { success: true, successIds, failedIds, errors };
   } catch (error: any) {
@@ -864,12 +967,28 @@ export async function unassignSupervisorAction(employeeId: string) {
       return { error: "Anda tidak memiliki akses untuk mengatur hierarki karyawan." };
     }
 
+    const employee = await prisma.user.findUnique({
+      where: { id: employeeId },
+      select: { name: true, namaAtasan: true, atasanId: true },
+    });
+
     await prisma.user.update({
       where: { id: employeeId },
       data: {
         atasanId: null,
         namaAtasan: null,
       },
+    });
+
+    await logAuditEvent({
+      actionType: "USER_UPDATE",
+      description: `Unassigned supervisor for employee: ${employee?.name || "Unknown"} (Removed supervisor: ${employee?.namaAtasan || "None"})`,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      targetId: employeeId,
+      targetName: employee?.name,
+      beforeState: { atasanId: employee?.atasanId, namaAtasan: employee?.namaAtasan },
+      afterState: { atasanId: null, namaAtasan: null },
     });
 
     revalidatePath("/pengaturan");

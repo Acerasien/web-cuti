@@ -8,6 +8,7 @@ import { uploadFile } from "@/lib/upload";
 import { LeaveType, RequestStatus } from "@prisma/client";
 import { calculateWorkingDays } from "@/lib/date";
 import { getAccruedQuotaDays } from "@/lib/accrual";
+import { logAuditEvent } from "@/lib/audit";
 
 async function getRemainingQuotaForCycle(
   userId: string,
@@ -236,6 +237,21 @@ export async function createLeaveRequest(prevState: any, formData: FormData) {
       });
     });
 
+    const targetUser = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { name: true },
+    });
+
+    await logAuditEvent({
+      actionType: "LEAVE_SUBMIT",
+      description: `Submitted leave request for ${targetUser?.name || "Unknown"} (Reason: ${reason})`,
+      actorId: currentUserId,
+      actorName: session.user.name,
+      targetId: targetUserId,
+      targetName: targetUser?.name,
+      afterState: { reason, segments: computedSegments },
+    });
+
     revalidatePath("/cuti");
     revalidatePath("/dashboard");
     return { success: true };
@@ -317,6 +333,24 @@ export async function reviewLeaveRequest(
         reviewedAt: new Date(),
         rejectionNote: status === "REJECTED" ? rejectionNote : null,
       },
+    });
+
+    const request = await prisma.leaveRequest.findUnique({
+      where: { id: requestId },
+      include: { user: { select: { name: true } } },
+    });
+
+    await logAuditEvent({
+      actionType: status === "APPROVED" ? "LEAVE_APPROVE" : "LEAVE_REJECT",
+      description: status === "APPROVED"
+        ? `Approved leave request for ${request?.user?.name || "Unknown"} (Approved by: ${session.user.name})`
+        : `Rejected leave request for ${request?.user?.name || "Unknown"} (Rejected by: ${session.user.name}, Reason: ${rejectionNote})`,
+      actorId: currentUserId,
+      actorName: session.user.name,
+      targetId: request?.userId,
+      targetName: request?.user?.name,
+      beforeState: { status: "PENDING" },
+      afterState: { status, rejectionNote: status === "REJECTED" ? rejectionNote : null },
     });
 
     revalidatePath("/cuti");
@@ -562,6 +596,16 @@ export async function importLeaveHistoryAction(rows: ImportLeaveRow[]): Promise<
         successCount++;
       }
     });
+
+    if (successCount > 0) {
+      await logAuditEvent({
+        actionType: "LEAVE_SUBMIT",
+        description: `Bulk imported ${successCount} leave history records`,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        afterState: { successCount },
+      });
+    }
 
     revalidatePath("/riwayat-tahunan");
     revalidatePath("/karyawan");

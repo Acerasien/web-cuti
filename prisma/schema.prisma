@@ -31,6 +31,25 @@ enum RequestStatus {
   REJECTED
 }
 
+enum AuditActionType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  QUOTA_CREATE
+  QUOTA_ADJUST
+  QUOTA_ROLLOVER
+  LEAVE_SUBMIT
+  LEAVE_APPROVE
+  LEAVE_REJECT
+  USER_CREATE
+  USER_UPDATE
+  USER_DELETE
+  SETTING_UPDATE
+  HOLIDAY_CREATE
+  HOLIDAY_DELETE
+  SUBCOMPANY_CREATE
+  SUBCOMPANY_DELETE
+}
+
 model User {
   id           String   @id @default(uuid())
   name         String
@@ -180,4 +199,24 @@ model LeaveAdjustment {
   @@index([userId])
   @@index([effectiveOn])
   @@map("leave_adjustments")
+}
+
+model AuditLog {
+  id          String          @id @default(uuid())
+  actionType  AuditActionType @map("action_type")
+  description String
+  actorId     String?         @map("actor_id")
+  actorName   String?         @map("actor_name")
+  targetId    String?         @map("target_id")
+  targetName  String?         @map("target_name")
+  beforeState Json?           @map("before_state")
+  afterState  Json?           @map("after_state")
+  ipAddress   String?         @map("ip_address")
+  userAgent   String?         @map("user_agent")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([actionType])
+  @@index([actorId])
+  @@map("audit_logs")
 }
